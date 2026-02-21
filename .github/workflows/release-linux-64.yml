@@ -1,0 +1,52 @@
+name: Release Linux 64
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.6"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build linux amd64 binary
+        run: |
+          mkdir -p build_assets
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 \
+            go build -v -o build_assets/v2node \
+            -trimpath \
+            -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=${GITHUB_REF_NAME}' -s -w -buildid="
+
+      - name: Download geo data
+        run: |
+          curl -fL "https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/geoip.dat" -o build_assets/geoip.dat
+          curl -fL "https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/geosite.dat" -o build_assets/geosite.dat
+
+      - name: Package linux artifact
+        run: |
+          cp README.md build_assets/README.md
+          cp LICENSE build_assets/LICENSE
+          cd build_assets
+          zip -9 "v2node-linux-64.zip" v2node README.md LICENSE geoip.dat geosite.dat
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: build_assets/v2node-linux-64.zip
+          overwrite_files: true
