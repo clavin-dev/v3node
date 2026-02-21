@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/juju/ratelimit"
@@ -30,6 +31,8 @@ type Limiter struct {
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
 	aliveLock     sync.RWMutex
 	AliveList     map[int]int // Key: Uid, value: alive_ip
+	// Unix timestamp. If now <= reportFailureUntil, skip alive-based device-limit reject.
+	reportFailureUntil atomic.Int64
 }
 
 type UserLimitInfo struct {
@@ -162,6 +165,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		l.aliveLock.RLock()
 		aliveIp := l.AliveList[uid]
 		l.aliveLock.RUnlock()
+		enforceAliveDeviceLimit := !l.InReportFailureGrace()
 		// If any device is online
 		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
 			oldipMap := v.(*sync.Map)
@@ -171,7 +175,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 					if v.(int) == uid {
 						l.OldUserOnline.Delete(ip)
 					}
-				} else if deviceLimit > 0 {
+				} else if deviceLimit > 0 && enforceAliveDeviceLimit {
 					if deviceLimit <= aliveIp {
 						oldipMap.Delete(ip)
 						return nil, true
@@ -183,7 +187,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 				l.OldUserOnline.Delete(ip)
 			}
 		} else {
-			if deviceLimit > 0 {
+			if deviceLimit > 0 && enforceAliveDeviceLimit {
 				if deviceLimit <= aliveIp {
 					l.UserOnlineIP.Delete(taguuid)
 					return nil, true
@@ -214,6 +218,30 @@ func (l *Limiter) SetAliveList(alive map[int]int) {
 	l.aliveLock.Lock()
 	l.AliveList = newAlive
 	l.aliveLock.Unlock()
+}
+
+func (l *Limiter) SetReportFailureGrace(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	until := time.Now().Add(d).Unix()
+	for {
+		old := l.reportFailureUntil.Load()
+		if until <= old {
+			return
+		}
+		if l.reportFailureUntil.CompareAndSwap(old, until) {
+			return
+		}
+	}
+}
+
+func (l *Limiter) ClearReportFailureGrace() {
+	l.reportFailureUntil.Store(0)
+}
+
+func (l *Limiter) InReportFailureGrace() bool {
+	return time.Now().Unix() <= l.reportFailureUntil.Load()
 }
 
 func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {

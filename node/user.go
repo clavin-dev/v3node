@@ -2,6 +2,7 @@ package node
 
 import (
 	"strconv"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	panel "github.com/wyx2685/v2node/api/v2board"
@@ -10,6 +11,8 @@ import (
 func (c *Controller) reportUserTrafficTask() (err error) {
 	var reportmin = 0
 	var devicemin = 0
+	var attemptedReport = false
+	var reportFailed = false
 	if c.info.Common.BaseConfig != nil {
 		reportmin = c.info.Common.BaseConfig.NodeReportMinTraffic
 		devicemin = c.info.Common.BaseConfig.DeviceOnlineMinTraffic
@@ -23,8 +26,10 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 		return nil
 	}
 	if len(userTraffic) > 0 {
+		attemptedReport = true
 		err = c.apiClient.ReportUserTraffic(userTraffic)
 		if err != nil {
+			reportFailed = true
 			log.WithFields(log.Fields{
 				"tag": c.tag,
 				"err": err,
@@ -38,6 +43,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 	if onlineDevice, err := c.limiter.GetOnlineDevice(); err != nil {
 		log.Print(err)
 	} else if len(*onlineDevice) > 0 {
+		attemptedReport = true
 		var result []panel.OnlineUser
 		var nocountUID = make(map[int]struct{})
 		for _, traffic := range userTraffic {
@@ -57,6 +63,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 			data[onlineuser.UID] = append(data[onlineuser.UID], onlineuser.IP)
 		}
 		if err = c.apiClient.ReportNodeOnlineUsers(&data); err != nil {
+			reportFailed = true
 			log.WithFields(log.Fields{
 				"tag": c.tag,
 				"err": err,
@@ -66,9 +73,32 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 			//log.WithField("tag", c.tag).Debugf("Online users: %+v", data)
 		}
 	}
+	if attemptedReport {
+		if reportFailed {
+			grace := c.reportFailureGraceDuration()
+			c.limiter.SetReportFailureGrace(grace)
+			log.WithFields(log.Fields{
+				"tag":   c.tag,
+				"grace": grace.String(),
+			}).Warn("Report failed, temporarily relaxed alive-based device limit")
+		} else {
+			c.limiter.ClearReportFailureGrace()
+		}
+	}
 
 	userTraffic = nil
 	return nil
+}
+
+func (c *Controller) reportFailureGraceDuration() time.Duration {
+	grace := c.info.PushInterval * 3
+	if grace < 30*time.Second {
+		grace = 30 * time.Second
+	}
+	if grace > 10*time.Minute {
+		grace = 10 * time.Minute
+	}
+	return grace
 }
 
 func compareUserList(old, new []panel.UserInfo) (deleted, added []panel.UserInfo) {
