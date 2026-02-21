@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -110,6 +109,8 @@ type EncSettings struct {
 	PrivateKey    string `json:"private_key"`
 }
 
+const defaultNodeInterval = 60 * time.Second
+
 func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	const path = "/api/v2/server/config"
 	r, err := c.client.
@@ -117,6 +118,15 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 		SetHeader("If-None-Match", c.nodeEtag).
 		ForceContentType("application/json").
 		Get(path)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, fmt.Errorf("received nil response")
+	}
+	if r.StatusCode() >= 400 {
+		return nil, fmt.Errorf("node info response status code: %d", r.StatusCode())
+	}
 
 	if r.StatusCode() == 304 {
 		return nil, nil
@@ -128,18 +138,14 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	}
 	c.responseBodyHash = newBodyHash
 	c.nodeEtag = r.Header().Get("ETag")
-	if err != nil {
-		return nil, err
-	}
 
-	if r != nil {
-		defer func() {
-			if r.RawBody() != nil {
-				r.RawBody().Close()
-			}
-		}()
-	} else {
-		return nil, fmt.Errorf("received nil response")
+	defer func() {
+		if r.RawBody() != nil {
+			r.RawBody().Close()
+		}
+	}()
+	if len(r.Body()) == 0 {
+		return nil, fmt.Errorf("received empty node info response body")
 	}
 	node = &NodeInfo{
 		Id: c.NodeId,
@@ -190,8 +196,13 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 	}
 
 	// set interval
-	node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
-	node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	if cm.BaseConfig == nil {
+		node.PushInterval = defaultNodeInterval
+		node.PullInterval = defaultNodeInterval
+	} else {
+		node.PushInterval = intervalToTime(cm.BaseConfig.PushInterval)
+		node.PullInterval = intervalToTime(cm.BaseConfig.PullInterval)
+	}
 
 	node.Common = cm
 
@@ -199,15 +210,36 @@ func (c *Client) GetNodeInfo() (node *NodeInfo, err error) {
 }
 
 func intervalToTime(i interface{}) time.Duration {
-	switch reflect.TypeOf(i).Kind() {
-	case reflect.Int:
-		return time.Duration(i.(int)) * time.Second
-	case reflect.String:
-		i, _ := strconv.Atoi(i.(string))
-		return time.Duration(i) * time.Second
-	case reflect.Float64:
-		return time.Duration(i.(float64)) * time.Second
+	switch v := i.(type) {
+	case nil:
+		return defaultNodeInterval
+	case int:
+		if v <= 0 {
+			return defaultNodeInterval
+		}
+		return time.Duration(v) * time.Second
+	case int32:
+		if v <= 0 {
+			return defaultNodeInterval
+		}
+		return time.Duration(v) * time.Second
+	case int64:
+		if v <= 0 {
+			return defaultNodeInterval
+		}
+		return time.Duration(v) * time.Second
+	case float64:
+		if v <= 0 {
+			return defaultNodeInterval
+		}
+		return time.Duration(v) * time.Second
+	case string:
+		sec, err := strconv.Atoi(v)
+		if err != nil || sec <= 0 {
+			return defaultNodeInterval
+		}
+		return time.Duration(sec) * time.Second
 	default:
-		return time.Duration(reflect.ValueOf(i).Int()) * time.Second
+		return defaultNodeInterval
 	}
 }

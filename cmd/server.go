@@ -39,6 +39,31 @@ func init() {
 	command.AddCommand(&serverCommand)
 }
 
+func applyLogConfig(cfg conf.LogConfig) {
+	switch cfg.Level {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
+	case "warn", "warning":
+		log.SetLevel(log.WarnLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
+	}
+	if cfg.Output == "" {
+		return
+	}
+	f, err := os.OpenFile(cfg.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.WithField("err", err).Error("Open log file failed, using current output instead")
+		return
+	}
+	if oldWriter, ok := log.StandardLogger().Out.(*os.File); ok && oldWriter != os.Stdout && oldWriter != os.Stderr {
+		_ = oldWriter.Close()
+	}
+	log.SetOutput(f)
+}
+
 func serverHandle(_ *cobra.Command, _ []string) {
 	showVersion()
 	c := conf.New()
@@ -52,23 +77,7 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		log.WithField("err", err).Error("Load config file failed")
 		return
 	}
-	switch c.LogConfig.Level {
-	case "debug":
-		log.SetLevel(log.DebugLevel)
-	case "info":
-		log.SetLevel(log.InfoLevel)
-	case "warn", "warning":
-		log.SetLevel(log.WarnLevel)
-	case "error":
-		log.SetLevel(log.ErrorLevel)
-	}
-	if c.LogConfig.Output != "" {
-		f, err := os.OpenFile(c.LogConfig.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			log.WithField("err", err).Error("Open log file failed, using stdout instead")
-		}
-		log.SetOutput(f)
-	}
+	applyLogConfig(c.LogConfig)
 	// Enable pprof if configured
 	if c.PprofPort != 0 {
 		go func() {
@@ -96,7 +105,11 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		log.WithField("err", err).Error("Start core failed")
 		return
 	}
-	defer v2core.Close()
+	defer func() {
+		if v2core != nil {
+			_ = v2core.Close()
+		}
+	}()
 	//node
 	err = nodes.Start(c.NodeConfigs, v2core)
 	if err != nil {
@@ -131,7 +144,8 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		case <-reloadCh:
 			log.Info("收到重启信号，正在重新加载配置...")
 			if err := reload(config, &nodes, &v2core); err != nil {
-				log.WithField("err", err).Panic("重启失败")
+				log.WithField("err", err).Error("重启失败，保持当前实例继续运行")
+				continue
 			}
 			log.Info("重启成功")
 		}
@@ -139,46 +153,20 @@ func serverHandle(_ *cobra.Command, _ []string) {
 }
 
 func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
+	oldNodes := *nodes
+	oldCore := *v2core
+	if oldNodes == nil || oldCore == nil {
+		return fmt.Errorf("old runtime is nil")
+	}
+	oldConf := oldCore.Config
+
 	// Preserve old reload channel so new core continues to receive signals
 	var oldReloadCh chan struct{}
-	if *v2core != nil {
-		oldReloadCh = (*v2core).ReloadCh
-	}
-
-	if err := (*nodes).Close(); err != nil {
-		return err
-	}
-
-	if err := (*v2core).Close(); err != nil {
-		return err
-	}
+	oldReloadCh = oldCore.ReloadCh
 
 	newConf := conf.New()
 	if err := newConf.LoadFromPath(config); err != nil {
 		return err
-	}
-
-	switch newConf.LogConfig.Level {
-	case "debug":
-		log.SetLevel(log.DebugLevel)
-	case "info":
-		log.SetLevel(log.InfoLevel)
-	case "warn", "warning":
-		log.SetLevel(log.WarnLevel)
-	case "error":
-		log.SetLevel(log.ErrorLevel)
-	}
-	if newConf.LogConfig.Output != "" {
-		f, err := os.OpenFile(newConf.LogConfig.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			log.WithField("err", err).Error("Open log file failed, using stdout instead")
-		} else {
-			// 关闭旧的日志文件（如果是文件）
-			if oldWriter, ok := log.StandardLogger().Out.(*os.File); ok && oldWriter != os.Stdout && oldWriter != os.Stderr {
-				oldWriter.Close()
-			}
-			log.SetOutput(f)
-		}
 	}
 
 	newNodes, err := node.New(newConf.NodeConfigs)
@@ -193,12 +181,36 @@ func reload(config string, nodes **node.Node, v2core **core.V2Core) error {
 		return err
 	}
 
-	if err := newNodes.Start(newConf.NodeConfigs, newCore); err != nil {
+	// keep old core running while preparing switch, then minimize downtime window
+	if err := oldNodes.Close(); err != nil {
+		_ = newCore.Close()
 		return err
 	}
 
+	if err := newNodes.Start(newConf.NodeConfigs, newCore); err != nil {
+		// best-effort rollback
+		if oldConf != nil {
+			recoverNodes, recoverErr := node.New(oldConf.NodeConfigs)
+			if recoverErr == nil {
+				if startErr := recoverNodes.Start(oldConf.NodeConfigs, oldCore); startErr == nil {
+					*nodes = recoverNodes
+				} else {
+					log.WithField("err", startErr).Error("rollback start old nodes failed")
+				}
+			} else {
+				log.WithField("err", recoverErr).Error("rollback build old nodes failed")
+			}
+		}
+		_ = newCore.Close()
+		return err
+	}
+
+	applyLogConfig(newConf.LogConfig)
 	*nodes = newNodes
 	*v2core = newCore
+	if err := oldCore.Close(); err != nil {
+		log.WithField("err", err).Warn("close old core failed after reload")
+	}
 
 	runtime.GC()
 	return nil

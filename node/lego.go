@@ -248,6 +248,7 @@ func (u *User) Save(path string) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	err = json.NewEncoder(f).Encode(u)
 	if err != nil {
 		return fmt.Errorf("marshal json error: %s", err)

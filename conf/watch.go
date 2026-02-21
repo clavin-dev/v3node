@@ -33,6 +33,7 @@ func (p *Conf) Watch(filePath string, reload func()) error {
 					err := p.LoadFromPath(filePath)
 					if err != nil {
 						log.Printf("reload config error: %s", err)
+						return
 					}
 					reload()
 					log.Println("reload config success")

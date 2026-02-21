@@ -73,7 +73,10 @@ func (c *Controller) requestCert() error {
 }
 
 func generateSelfSslCertificate(domain, certPath, keyPath string) error {
-	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
 	tmpl := &x509.Certificate{
 		Version:      3,
 		SerialNumber: big.NewInt(time.Now().Unix()),
@@ -95,6 +98,7 @@ func generateSelfSslCertificate(domain, certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	err = pem.Encode(f, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: cert,
@@ -102,12 +106,13 @@ func generateSelfSslCertificate(domain, certPath, keyPath string) error {
 	if err != nil {
 		return err
 	}
-	f, err = os.OpenFile(keyPath, os.O_CREATE|os.O_RDWR, 0644)
+	fKey, err := os.OpenFile(keyPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return err
 	}
-	err = pem.Encode(f, &pem.Block{
-		Type:  "EC PRIVATE KEY",
+	defer fKey.Close()
+	err = pem.Encode(fKey, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	})
 	if err != nil {

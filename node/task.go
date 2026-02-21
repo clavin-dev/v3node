@@ -49,7 +49,11 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 func (c *Controller) reloadTask() {
 	newClient, err := panel.New(c.conf)
 	if err != nil {
-		log.Panic("Tasks reload failed")
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Error("Tasks reload failed")
+		return
 	}
 	c.apiClient = newClient
 	c.nodeInfoMonitorPeriodic.Close()
@@ -81,7 +85,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 			default:
 			}
 		} else {
-			log.Panic("Reload failed")
+			log.WithField("tag", c.tag).Error("Reload channel is nil")
 		}
 	}
 	log.WithField("tag", c.tag).Debug("Node info no change")
@@ -107,10 +111,10 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 
 	// update alive list
 	if newA != nil {
-		c.limiter.AliveList = newA
+		c.limiter.SetAliveList(newA)
 	}
-	// node no changed, check users
-	if len(newU) == 0 {
+	// nil means 304 (no change), empty slice means panel returned no users
+	if newU == nil {
 		log.WithField("tag", c.tag).Debug("User list no change")
 		return nil
 	}

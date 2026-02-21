@@ -14,7 +14,14 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 		reportmin = c.info.Common.BaseConfig.NodeReportMinTraffic
 		devicemin = c.info.Common.BaseConfig.DeviceOnlineMinTraffic
 	}
-	userTraffic, _ := c.server.GetUserTrafficSlice(c.tag, reportmin)
+	userTraffic, err := c.server.GetUserTrafficSlice(c.tag, reportmin)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"tag": c.tag,
+			"err": err,
+		}).Info("Get user traffic failed")
+		return nil
+	}
 	if len(userTraffic) > 0 {
 		err = c.apiClient.ReportUserTraffic(userTraffic)
 		if err != nil {
@@ -67,12 +74,12 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 func compareUserList(old, new []panel.UserInfo) (deleted, added []panel.UserInfo) {
 	oldMap := make(map[string]int)
 	for i, user := range old {
-		key := user.Uuid + strconv.Itoa(user.SpeedLimit)
+		key := user.Uuid + "-" + strconv.Itoa(user.SpeedLimit) + "-" + strconv.Itoa(user.DeviceLimit)
 		oldMap[key] = i
 	}
 
 	for _, user := range new {
-		key := user.Uuid + strconv.Itoa(user.SpeedLimit)
+		key := user.Uuid + "-" + strconv.Itoa(user.SpeedLimit) + "-" + strconv.Itoa(user.DeviceLimit)
 		if _, exists := oldMap[key]; !exists {
 			added = append(added, user)
 		} else {

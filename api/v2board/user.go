@@ -145,7 +145,7 @@ func (c *Client) ReportNodeOnlineUsers(data *map[int][]string) error {
 		Post(path)
 
 	if err != nil {
-		return nil
+		return err
 	}
 
 	return nil

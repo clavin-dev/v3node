@@ -28,7 +28,8 @@ type Limiter struct {
 	UUIDtoUID     map[string]int // Key: UUID, value: Uid
 	UserLimitInfo *sync.Map      // Key: TagUUID value: UserLimitInfo
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
-	AliveList     map[int]int    // Key: Uid, value: alive_ip
+	aliveLock     sync.RWMutex
+	AliveList     map[int]int // Key: Uid, value: alive_ip
 }
 
 type UserLimitInfo struct {
@@ -41,11 +42,15 @@ type UserLimitInfo struct {
 }
 
 func AddLimiter(tag string, users []panel.UserInfo, aliveList map[int]int) *Limiter {
+	alive := make(map[int]int, len(aliveList))
+	for uid, count := range aliveList {
+		alive[uid] = count
+	}
 	info := &Limiter{
 		UserOnlineIP:  new(sync.Map),
 		UserLimitInfo: new(sync.Map),
 		SpeedLimiter:  new(sync.Map),
-		AliveList:     aliveList,
+		AliveList:     alive,
 		OldUserOnline: new(sync.Map),
 	}
 	uuidmap := make(map[string]int)
@@ -91,7 +96,9 @@ func (l *Limiter) UpdateUser(tag string, added []panel.UserInfo, deleted []panel
 		l.UserOnlineIP.Delete(format.UserTag(tag, deleted[i].Uuid))
 		l.SpeedLimiter.Delete(format.UserTag(tag, deleted[i].Uuid))
 		delete(l.UUIDtoUID, deleted[i].Uuid)
+		l.aliveLock.Lock()
 		delete(l.AliveList, deleted[i].Id)
+		l.aliveLock.Unlock()
 	}
 	for i := range added {
 		userLimit := &UserLimitInfo{
@@ -152,7 +159,9 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		// Store online user for device limit
 		newipMap := new(sync.Map)
 		newipMap.Store(ip, uid)
+		l.aliveLock.RLock()
 		aliveIp := l.AliveList[uid]
+		l.aliveLock.RUnlock()
 		// If any device is online
 		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
 			oldipMap := v.(*sync.Map)
@@ -195,6 +204,16 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 	} else {
 		return nil, false
 	}
+}
+
+func (l *Limiter) SetAliveList(alive map[int]int) {
+	newAlive := make(map[int]int, len(alive))
+	for uid, count := range alive {
+		newAlive[uid] = count
+	}
+	l.aliveLock.Lock()
+	l.AliveList = newAlive
+	l.aliveLock.Unlock()
 }
 
 func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
