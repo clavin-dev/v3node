@@ -12,6 +12,8 @@ REPO_BRANCH="${REPO_BRANCH:-main}"
 GITHUB_API_BASE="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}"
 GITHUB_RELEASE_BASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
+MANAGER_CMD="${MANAGER_CMD:-v3node}"
+LEGACY_MANAGER_CMD="${LEGACY_MANAGER_CMD:-v2node}"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
@@ -383,28 +385,30 @@ EOF
     fi
 
 
-    curl -o /usr/bin/v2node -Ls "${GITHUB_RAW_BASE}/script/v2node.sh"
-    chmod +x /usr/bin/v2node
+    curl -o "/usr/bin/${MANAGER_CMD}" -Ls "${GITHUB_RAW_BASE}/script/v2node.sh"
+    chmod +x "/usr/bin/${MANAGER_CMD}"
+    ln -sf "/usr/bin/${MANAGER_CMD}" "/usr/bin/${LEGACY_MANAGER_CMD}"
 
     cd $cur_dir
     rm -f install.sh
     echo "------------------------------------------"
-    echo -e "管理脚本使用方法: "
+    echo -e "管理脚本使用方法(主命令: ${MANAGER_CMD}): "
     echo "------------------------------------------"
-    echo "v2node              - 显示管理菜单 (功能更多)"
-    echo "v2node start        - 启动 v2node"
-    echo "v2node stop         - 停止 v2node"
-    echo "v2node restart      - 重启 v2node"
-    echo "v2node status       - 查看 v2node 状态"
-    echo "v2node enable       - 设置 v2node 开机自启"
-    echo "v2node disable      - 取消 v2node 开机自启"
-    echo "v2node log          - 查看 v2node 日志"
-    echo "v2node generate     - 生成 v2node 配置文件"
-    echo "v2node update       - 更新 v2node"
-    echo "v2node update x.x.x - 更新 v2node 指定版本"
-    echo "v2node install      - 安装 v2node"
-    echo "v2node uninstall    - 卸载 v2node"
-    echo "v2node version      - 查看 v2node 版本"
+    echo "${MANAGER_CMD}              - 显示管理菜单 (功能更多)"
+    echo "${MANAGER_CMD} start        - 启动 v2node"
+    echo "${MANAGER_CMD} stop         - 停止 v2node"
+    echo "${MANAGER_CMD} restart      - 重启 v2node"
+    echo "${MANAGER_CMD} status       - 查看 v2node 状态"
+    echo "${MANAGER_CMD} enable       - 设置 v2node 开机自启"
+    echo "${MANAGER_CMD} disable      - 取消 v2node 开机自启"
+    echo "${MANAGER_CMD} log          - 查看 v2node 日志"
+    echo "${MANAGER_CMD} generate     - 生成 v2node 配置文件"
+    echo "${MANAGER_CMD} update       - 更新 v2node"
+    echo "${MANAGER_CMD} update x.x.x - 更新 v2node 指定版本"
+    echo "${MANAGER_CMD} install      - 安装 v2node"
+    echo "${MANAGER_CMD} uninstall    - 卸载 v2node"
+    echo "${MANAGER_CMD} version      - 查看 v2node 版本"
+    echo "兼容命令: ${LEGACY_MANAGER_CMD} -> ${MANAGER_CMD}"
     echo "------------------------------------------"
     curl -fsS --max-time 10 "https://api.v-50.me/counter" || true
 
@@ -421,7 +425,7 @@ EOF
             # 生成配置文件（覆盖可能从包中复制的模板）
             generate_v2node_config "$api_host" "$node_id" "$api_key"
         else
-            echo "${green}已跳过自动生成配置。如需后续生成，可执行: v2node generate${plain}"
+            echo "${green}已跳过自动生成配置。如需后续生成，可执行: ${MANAGER_CMD} generate${plain}"
         fi
     fi
 }

@@ -1,4 +1,4 @@
-# v2node
+# v3node
 A v2board backend base on moddified xray-core.
 一个基于修改版xray内核的V2board节点服务端。
 
@@ -9,8 +9,10 @@ A v2board backend base on moddified xray-core.
 ### 一键安装
 
 ```
-wget -N https://raw.githubusercontent.com/clavin-dev/v3node/master/script/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/clavin-dev/v3node/main/script/install.sh && bash install.sh
 ```
+
+安装后主命令为 `v3node`，同时兼容 `v2node`（软链接）。
 
 ## 构建
 ``` bash
@@ -19,4 +21,4 @@ GOEXPERIMENT=jsonv2 go build -v -o build_assets/v2node -trimpath -ldflags "-X 'g
 
 ## Stars 增长记录
 
-[![Stargazers over time](https://starchart.cc/wyx2685/v2node.svg?variant=adaptive)](https://starchart.cc/wyx2685/v2node)
+[![Stargazers over time](https://starchart.cc/clavin-dev/v3node.svg?variant=adaptive)](https://starchart.cc/clavin-dev/v3node)

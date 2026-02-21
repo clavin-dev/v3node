@@ -10,6 +10,8 @@ REPO_OWNER="${REPO_OWNER:-clavin-dev}"
 REPO_NAME="${REPO_NAME:-v3node}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}"
+MANAGER_CMD="${MANAGER_CMD:-v3node}"
+LEGACY_MANAGER_CMD="${LEGACY_MANAGER_CMD:-v2node}"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
@@ -184,7 +186,7 @@ uninstall() {
     rm /usr/local/v2node/ -rf
 
     echo ""
-    echo -e "卸载成功，如果你想删除此脚本，则退出脚本后运行 ${green}rm /usr/bin/v2node -f${plain} 进行删除"
+    echo -e "卸载成功，如果你想删除此脚本，则退出脚本后运行 ${green}rm /usr/bin/${MANAGER_CMD} -f${plain} 进行删除"
     echo ""
 
     if [[ $# == 0 ]]; then
@@ -311,13 +313,14 @@ show_log() {
 }
 
 update_shell() {
-    wget -O /usr/bin/v2node -N --no-check-certificate "${GITHUB_RAW_BASE}/script/v2node.sh"
+    wget -O "/usr/bin/${MANAGER_CMD}" -N --no-check-certificate "${GITHUB_RAW_BASE}/script/v2node.sh"
     if [[ $? != 0 ]]; then
         echo ""
         echo -e "${red}下载脚本失败，请检查本机能否连接 Github${plain}"
         before_show_menu
     else
-        chmod +x /usr/bin/v2node
+        chmod +x "/usr/bin/${MANAGER_CMD}"
+        ln -sf "/usr/bin/${MANAGER_CMD}" "/usr/bin/${LEGACY_MANAGER_CMD}"
         echo -e "${green}升级脚本成功，请重新运行脚本${plain}" && exit 0
     fi
 }
@@ -494,29 +497,30 @@ open_ports() {
 }
 
 show_usage() {
-    echo "v2node 管理脚本使用方法: "
+    echo "${MANAGER_CMD} 管理脚本使用方法: "
     echo "------------------------------------------"
-    echo "v2node              - 显示管理菜单 (功能更多)"
-    echo "v2node start        - 启动 v2node"
-    echo "v2node stop         - 停止 v2node"
-    echo "v2node restart      - 重启 v2node"
-    echo "v2node status       - 查看 v2node 状态"
-    echo "v2node enable       - 设置 v2node 开机自启"
-    echo "v2node disable      - 取消 v2node 开机自启"
-    echo "v2node log          - 查看 v2node 日志"
-    echo "v2node x25519       - 生成 x25519 密钥"
-    echo "v2node generate     - 生成 v2node 配置文件"
-    echo "v2node update       - 更新 v2node"
-    echo "v2node update x.x.x - 安装 v2node 指定版本"
-    echo "v2node install      - 安装 v2node"
-    echo "v2node uninstall    - 卸载 v2node"
-    echo "v2node version      - 查看 v2node 版本"
+    echo "${MANAGER_CMD}              - 显示管理菜单 (功能更多)"
+    echo "${MANAGER_CMD} start        - 启动 v2node"
+    echo "${MANAGER_CMD} stop         - 停止 v2node"
+    echo "${MANAGER_CMD} restart      - 重启 v2node"
+    echo "${MANAGER_CMD} status       - 查看 v2node 状态"
+    echo "${MANAGER_CMD} enable       - 设置 v2node 开机自启"
+    echo "${MANAGER_CMD} disable      - 取消 v2node 开机自启"
+    echo "${MANAGER_CMD} log          - 查看 v2node 日志"
+    echo "${MANAGER_CMD} x25519       - 生成 x25519 密钥"
+    echo "${MANAGER_CMD} generate     - 生成 v2node 配置文件"
+    echo "${MANAGER_CMD} update       - 更新 v2node"
+    echo "${MANAGER_CMD} update x.x.x - 安装 v2node 指定版本"
+    echo "${MANAGER_CMD} install      - 安装 v2node"
+    echo "${MANAGER_CMD} uninstall    - 卸载 v2node"
+    echo "${MANAGER_CMD} version      - 查看 v2node 版本"
+    echo "兼容命令: ${LEGACY_MANAGER_CMD} -> ${MANAGER_CMD}"
     echo "------------------------------------------"
 }
 
 show_menu() {
     echo -e "
-  ${green}v2node 后端管理脚本，${plain}${red}不适用于docker${plain}
+  ${green}${MANAGER_CMD} 后端管理脚本，${plain}${red}不适用于docker${plain}
 --- https://github.com/clavin-dev/v3node ---
   ${green}0.${plain} 修改配置
 ————————————————
@@ -534,7 +538,7 @@ show_menu() {
   ${green}10.${plain} 取消 v2node 开机自启
 ————————————————
   ${green}11.${plain} 查看 v2node 版本
-  ${green}12.${plain} 升级 v2node 维护脚本
+  ${green}12.${plain} 升级 ${MANAGER_CMD} 维护脚本
   ${green}13.${plain} 生成 v2node 配置文件
   ${green}14.${plain} 放行 VPS 的所有网络端口
   ${green}15.${plain} 退出脚本
