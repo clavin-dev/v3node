@@ -411,6 +411,7 @@ EOF
 
     curl -o "/usr/bin/${MANAGER_CMD}" -Ls "${GITHUB_RAW_BASE}/script/v3node.sh"
     chmod +x "/usr/bin/${MANAGER_CMD}"
+    rm -f /usr/bin/v2node
 
     cd $cur_dir
     rm -f install.sh
