@@ -38,6 +38,12 @@ func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 	delete(m.links, writer)
 }
 
+func (m *LinkManager) IsEmpty() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.links) == 0
+}
+
 func (m *LinkManager) CloseAll() {
 	m.mu.Lock()
 	entries := make([]struct {

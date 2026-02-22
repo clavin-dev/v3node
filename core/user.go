@@ -83,12 +83,35 @@ func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserT
 			traffic := value.(*counter.TrafficStorage)
 			up := traffic.UpCounter.Load()
 			down := traffic.DownCounter.Load()
-			if up+down > int64(mintraffic*1000) {
+			total := up + down
+			if total == 0 {
+				// Drop idle zero counters (and empty link managers) to keep memory flat over time.
+				if vc.dispatcher != nil {
+					if lmRaw, ok := vc.dispatcher.LinkManagers.Load(email); ok {
+						if lm, ok := lmRaw.(*dispatcher.LinkManager); ok && lm.IsEmpty() {
+							vc.dispatcher.LinkManagers.Delete(email)
+							c.Delete(email)
+						}
+					} else {
+						c.Delete(email)
+					}
+				}
+				return true
+			}
+			if total > int64(mintraffic*1000) {
 				traffic.UpCounter.Store(0)
 				traffic.DownCounter.Store(0)
 				uid := vc.users.uidMap[email]
 				if uid == 0 {
 					c.Delete(email)
+					if vc.dispatcher != nil {
+						if lmRaw, ok := vc.dispatcher.LinkManagers.Load(email); ok {
+							if lm, ok := lmRaw.(*dispatcher.LinkManager); ok {
+								lm.CloseAll()
+							}
+							vc.dispatcher.LinkManagers.Delete(email)
+						}
+					}
 					return true
 				}
 				trafficSlice = append(trafficSlice, panel.UserTraffic{

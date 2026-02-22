@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/juju/ratelimit"
 	panel "github.com/clavin-dev/v3node/api/v2board"
 	"github.com/clavin-dev/v3node/common/format"
+	"github.com/juju/ratelimit"
 )
 
 var limitLock sync.RWMutex
@@ -25,10 +25,11 @@ type Limiter struct {
 	ProtocolRules []string
 	SpeedLimit    int
 	UserOnlineIP  *sync.Map      // Key: TagUUID, value: {Key: Ip, value: Uid}
-	OldUserOnline *sync.Map      // Key: Ip, value: Uid
 	UUIDtoUID     map[string]int // Key: UUID, value: Uid
 	UserLimitInfo *sync.Map      // Key: TagUUID value: UserLimitInfo
 	SpeedLimiter  *sync.Map      // key: TagUUID, value: *ratelimit.Bucket
+	oldOnlineLock sync.RWMutex
+	oldUserOnline map[string]int // Key: Ip, value: Uid
 	aliveLock     sync.RWMutex
 	AliveList     map[int]int // Key: Uid, value: alive_ip
 	// Unix timestamp. If now <= reportFailureUntil, skip alive-based device-limit reject.
@@ -54,7 +55,7 @@ func AddLimiter(tag string, users []panel.UserInfo, aliveList map[int]int) *Limi
 		UserLimitInfo: new(sync.Map),
 		SpeedLimiter:  new(sync.Map),
 		AliveList:     alive,
-		OldUserOnline: new(sync.Map),
+		oldUserOnline: make(map[string]int),
 	}
 	uuidmap := make(map[string]int)
 	for i := range users {
@@ -160,37 +161,38 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		return nil, true
 	}
 	if noSSUDP {
+		var userIPMap *sync.Map
+		createdUserIPMap := false
+		if v, ok := l.UserOnlineIP.Load(taguuid); ok {
+			userIPMap = v.(*sync.Map)
+		} else {
+			newMap := new(sync.Map)
+			if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newMap); loaded {
+				userIPMap = v.(*sync.Map)
+			} else {
+				userIPMap = newMap
+				createdUserIPMap = true
+			}
+		}
+
 		// Store online user for device limit
-		newipMap := new(sync.Map)
-		newipMap.Store(ip, uid)
 		l.aliveLock.RLock()
 		aliveIp := l.AliveList[uid]
 		l.aliveLock.RUnlock()
 		enforceAliveDeviceLimit := nowUnix > l.reportFailureUntil.Load()
-		// If any device is online
-		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
-			oldipMap := v.(*sync.Map)
-			// If this is a new ip
-			if _, loaded := oldipMap.LoadOrStore(ip, uid); !loaded {
-				if v, loaded := l.OldUserOnline.Load(ip); loaded {
-					if v.(int) == uid {
-						l.OldUserOnline.Delete(ip)
-					}
-				} else if deviceLimit > 0 && enforceAliveDeviceLimit {
-					if deviceLimit <= aliveIp {
-						oldipMap.Delete(ip)
-						return nil, true
-					}
+
+		// If this is a new ip
+		if _, loaded := userIPMap.LoadOrStore(ip, uid); !loaded {
+			if oldUID, ok := l.getOldOnlineUID(ip); ok {
+				if oldUID == uid {
+					l.deleteOldOnlineIP(ip)
 				}
-			}
-		} else if v, ok := l.OldUserOnline.Load(ip); ok {
-			if v.(int) == uid {
-				l.OldUserOnline.Delete(ip)
-			}
-		} else {
-			if deviceLimit > 0 && enforceAliveDeviceLimit {
+			} else if deviceLimit > 0 && enforceAliveDeviceLimit {
 				if deviceLimit <= aliveIp {
-					l.UserOnlineIP.Delete(taguuid)
+					userIPMap.Delete(ip)
+					if createdUserIPMap {
+						l.UserOnlineIP.Delete(taguuid)
+					}
 					return nil, true
 				}
 			}
@@ -248,22 +250,38 @@ func (l *Limiter) InReportFailureGrace() bool {
 
 func (l *Limiter) GetOnlineDevice() (*[]panel.OnlineUser, error) {
 	var onlineUser []panel.OnlineUser
-	l.OldUserOnline = new(sync.Map)
+	oldOnline := make(map[string]int)
 	l.UserOnlineIP.Range(func(key, value interface{}) bool {
 		taguuid := key.(string)
 		ipMap := value.(*sync.Map)
 		ipMap.Range(func(key, value interface{}) bool {
 			uid := value.(int)
 			ip := key.(string)
-			l.OldUserOnline.Store(ip, uid)
+			oldOnline[ip] = uid
 			onlineUser = append(onlineUser, panel.OnlineUser{UID: uid, IP: ip})
 			return true
 		})
 		l.UserOnlineIP.Delete(taguuid) // Reset online device
 		return true
 	})
+	l.oldOnlineLock.Lock()
+	l.oldUserOnline = oldOnline
+	l.oldOnlineLock.Unlock()
 
 	return &onlineUser, nil
+}
+
+func (l *Limiter) getOldOnlineUID(ip string) (int, bool) {
+	l.oldOnlineLock.RLock()
+	uid, ok := l.oldUserOnline[ip]
+	l.oldOnlineLock.RUnlock()
+	return uid, ok
+}
+
+func (l *Limiter) deleteOldOnlineIP(ip string) {
+	l.oldOnlineLock.Lock()
+	delete(l.oldUserOnline, ip)
+	l.oldOnlineLock.Unlock()
 }
 
 type UserIpList struct {

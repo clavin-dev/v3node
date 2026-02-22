@@ -169,6 +169,19 @@ func (*DefaultDispatcher) Start() error {
 // Close implements common.Closable.
 func (*DefaultDispatcher) Close() error { return nil }
 
+func (d *DefaultDispatcher) getOrCreateLinkManager(email string) *LinkManager {
+	if lmRaw, ok := d.LinkManagers.Load(email); ok {
+		return lmRaw.(*LinkManager)
+	}
+	lm := &LinkManager{
+		links: make(map[*ManagedWriter]buf.Reader),
+	}
+	if actual, loaded := d.LinkManagers.LoadOrStore(email, lm); loaded {
+		return actual.(*LinkManager)
+	}
+	return lm
+}
+
 func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*transport.Link, *transport.Link, *limiter.Limiter, error) {
 	opt := pipe.OptionsFromContext(ctx)
 	uplinkReader, uplinkWriter := pipe.New(opt...)
@@ -215,15 +228,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			common.Interrupt(inboundLink.Reader)
 			return nil, nil, nil, errors.New("Limited ", user.Email, " by conn or ip")
 		}
-		var lm *LinkManager
-		if lmloaded, ok := d.LinkManagers.Load(user.Email); !ok {
-			lm = &LinkManager{
-				links: make(map[*ManagedWriter]buf.Reader),
-			}
-			d.LinkManagers.Store(user.Email, lm)
-		} else {
-			lm = lmloaded.(*LinkManager)
-		}
+		lm := d.getOrCreateLinkManager(user.Email)
 		managedWriter := &ManagedWriter{
 			writer:  uplinkWriter,
 			manager: lm,
@@ -405,15 +410,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 			common.Interrupt(outbound.Reader)
 			return errors.New("Limited ", user.Email, " by conn or ip")
 		}
-		var lm *LinkManager
-		if lmloaded, ok := d.LinkManagers.Load(user.Email); !ok {
-			lm = &LinkManager{
-				links: make(map[*ManagedWriter]buf.Reader),
-			}
-			d.LinkManagers.Store(user.Email, lm)
-		} else {
-			lm = lmloaded.(*LinkManager)
-		}
+		lm := d.getOrCreateLinkManager(user.Email)
 		managedWriter := &ManagedWriter{
 			writer:  outbound.Writer,
 			manager: lm,
