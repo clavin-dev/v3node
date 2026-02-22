@@ -40,9 +40,25 @@ func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 
 func (m *LinkManager) CloseAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	entries := make([]struct {
+		writer *ManagedWriter
+		reader buf.Reader
+	}, 0, len(m.links))
 	for w, r := range m.links {
-		common.Close(w)
-		common.Interrupt(r)
+		entries = append(entries, struct {
+			writer *ManagedWriter
+			reader buf.Reader
+		}{writer: w, reader: r})
+		delete(m.links, w)
+	}
+	m.mu.Unlock()
+
+	for _, entry := range entries {
+		if entry.reader != nil {
+			common.Interrupt(entry.reader)
+		}
+		if entry.writer != nil {
+			_ = common.Close(entry.writer.writer)
+		}
 	}
 }

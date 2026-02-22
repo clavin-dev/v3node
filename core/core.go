@@ -3,11 +3,11 @@ package core
 import (
 	"sync"
 
-	log "github.com/sirupsen/logrus"
 	panel "github.com/clavin-dev/v3node/api/v2board"
 	"github.com/clavin-dev/v3node/conf"
 	"github.com/clavin-dev/v3node/core/app/dispatcher"
 	_ "github.com/clavin-dev/v3node/core/distro/all"
+	log "github.com/sirupsen/logrus"
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/app/stats"
 	"github.com/xtls/xray-core/common/serial"
@@ -67,6 +67,30 @@ func (v *V2Core) Start(infos []*panel.NodeInfo) error {
 func (v *V2Core) Close() error {
 	v.access.Lock()
 	defer v.access.Unlock()
+
+	if v.dispatcher != nil {
+		v.dispatcher.Counter.Range(func(key, value interface{}) bool {
+			tag, ok := key.(string)
+			if ok {
+				v.dispatcher.Counter.Delete(tag)
+			}
+			return true
+		})
+		v.dispatcher.LinkManagers.Range(func(key, value interface{}) bool {
+			if lm, ok := value.(*dispatcher.LinkManager); ok {
+				lm.CloseAll()
+			}
+			v.dispatcher.LinkManagers.Delete(key)
+			return true
+		})
+	}
+
+	if v.users != nil {
+		v.users.mapLock.Lock()
+		v.users.uidMap = make(map[string]int)
+		v.users.mapLock.Unlock()
+	}
+
 	v.Config = nil
 	v.ihm = nil
 	v.ohm = nil

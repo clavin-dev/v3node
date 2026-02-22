@@ -3,10 +3,10 @@ package node
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	panel "github.com/clavin-dev/v3node/api/v2board"
 	"github.com/clavin-dev/v3node/conf"
 	"github.com/clavin-dev/v3node/core"
+	log "github.com/sirupsen/logrus"
 )
 
 type Node struct {
@@ -56,5 +56,6 @@ func (n *Node) Close() error {
 		}
 	}
 	n.controllers = nil
+	n.NodeInfos = nil
 	return nil
 }

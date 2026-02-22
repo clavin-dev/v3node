@@ -7,8 +7,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/clavin-dev/v3node/conf"
+	"github.com/go-resty/resty/v2"
 )
 
 // Panel is the interface for different panel's api.
@@ -21,8 +21,6 @@ type Client struct {
 	nodeEtag         string
 	userEtag         string
 	responseBodyHash string
-	UserList         *UserListBody
-	AliveMap         *AliveMap
 }
 
 func New(c *conf.NodeConfig) (*Client, error) {
@@ -49,11 +47,9 @@ func New(c *conf.NodeConfig) (*Client, error) {
 		"token":     c.Key,
 	})
 	return &Client{
-		client:   client,
-		Token:    c.Key,
-		APIHost:  c.APIHost,
-		NodeId:   c.NodeID,
-		UserList: &UserListBody{},
-		AliveMap: &AliveMap{},
+		client:  client,
+		Token:   c.Key,
+		APIHost: c.APIHost,
+		NodeId:  c.NodeID,
 	}, nil
 }

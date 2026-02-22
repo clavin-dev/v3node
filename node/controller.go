@@ -3,12 +3,12 @@ package node
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	panel "github.com/clavin-dev/v3node/api/v2board"
 	"github.com/clavin-dev/v3node/common/task"
 	"github.com/clavin-dev/v3node/conf"
 	"github.com/clavin-dev/v3node/core"
 	"github.com/clavin-dev/v3node/limiter"
+	log "github.com/sirupsen/logrus"
 )
 
 type Controller struct {
@@ -104,5 +104,13 @@ func (c *Controller) Close() error {
 	if err != nil {
 		return fmt.Errorf("del node error: %s", err)
 	}
+
+	// Clear large references so they can be reclaimed promptly.
+	c.userList = nil
+	c.aliveMap = nil
+	c.info = nil
+	c.limiter = nil
+	c.apiClient = nil
+
 	return nil
 }

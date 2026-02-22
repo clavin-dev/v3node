@@ -91,27 +91,27 @@ func (c *Client) GetUserList() ([]UserInfo, error) {
 
 // GetUserAlive will fetch the alive_ip count for users
 func (c *Client) GetUserAlive() (map[int]int, error) {
-	c.AliveMap = &AliveMap{}
+	aliveMap := &AliveMap{}
 	const path = "/api/v1/server/UniProxy/alivelist"
 	r, err := c.client.R().
 		ForceContentType("application/json").
 		Get(path)
 	if err != nil || r.StatusCode() >= 399 {
-		c.AliveMap.Alive = make(map[int]int)
-		return c.AliveMap.Alive, nil
+		aliveMap.Alive = make(map[int]int)
+		return aliveMap.Alive, nil
 	}
 	if r == nil || r.RawResponse == nil {
 		fmt.Printf("received nil response or raw response")
-		c.AliveMap.Alive = make(map[int]int)
-		return c.AliveMap.Alive, nil
+		aliveMap.Alive = make(map[int]int)
+		return aliveMap.Alive, nil
 	}
 	defer r.RawResponse.Body.Close()
-	if err := json.Unmarshal(r.Body(), c.AliveMap); err != nil {
+	if err := json.Unmarshal(r.Body(), aliveMap); err != nil {
 		fmt.Printf("unmarshal user alive list error: %s", err)
-		c.AliveMap.Alive = make(map[int]int)
+		aliveMap.Alive = make(map[int]int)
 	}
 
-	return c.AliveMap.Alive, nil
+	return aliveMap.Alive, nil
 }
 
 type UserTraffic struct {

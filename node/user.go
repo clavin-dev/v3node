@@ -3,8 +3,8 @@ package node
 import (
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	panel "github.com/clavin-dev/v3node/api/v2board"
+	log "github.com/sirupsen/logrus"
 )
 
 func (c *Controller) reportUserTrafficTask() (err error) {
@@ -101,28 +101,32 @@ func (c *Controller) reportFailureGraceDuration() time.Duration {
 }
 
 func compareUserList(old, new []panel.UserInfo) (deleted, added []panel.UserInfo) {
-	oldMap := make(map[string]panel.UserInfo, len(old))
-	for _, user := range old {
-		oldMap[user.Uuid] = user
+	oldIndex := make(map[string]int, len(old))
+	for i := range old {
+		oldIndex[old[i].Uuid] = i
 	}
 
 	for _, user := range new {
-		oldUser, exists := oldMap[user.Uuid]
+		idx, exists := oldIndex[user.Uuid]
 		if !exists {
 			added = append(added, user)
 			continue
 		}
+		oldUser := old[idx]
 		if oldUser.SpeedLimit != user.SpeedLimit || oldUser.DeviceLimit != user.DeviceLimit {
-			// Keep old user in oldMap so it is treated as deleted.
+			deleted = append(deleted, oldUser)
 			added = append(added, user)
-			continue
 		}
-		delete(oldMap, user.Uuid)
+		delete(oldIndex, user.Uuid)
 	}
 
-	deleted = make([]panel.UserInfo, 0, len(oldMap))
-	for _, user := range oldMap {
-		deleted = append(deleted, user)
+	if len(oldIndex) > 0 {
+		if deleted == nil {
+			deleted = make([]panel.UserInfo, 0, len(oldIndex))
+		}
+		for _, idx := range oldIndex {
+			deleted = append(deleted, old[idx])
+		}
 	}
 
 	return deleted, added
