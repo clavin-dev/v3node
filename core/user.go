@@ -86,12 +86,13 @@ func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserT
 			if up+down > int64(mintraffic*1000) {
 				traffic.UpCounter.Store(0)
 				traffic.DownCounter.Store(0)
-				if vc.users.uidMap[email] == 0 {
+				uid := vc.users.uidMap[email]
+				if uid == 0 {
 					c.Delete(email)
 					return true
 				}
 				trafficSlice = append(trafficSlice, panel.UserTraffic{
-					UID:      vc.users.uidMap[email],
+					UID:      uid,
 					Upload:   up,
 					Download: down,
 				})

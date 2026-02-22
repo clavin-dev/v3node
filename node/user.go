@@ -1,7 +1,6 @@
 package node
 
 import (
-	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -44,8 +43,8 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 		log.Print(err)
 	} else if len(*onlineDevice) > 0 {
 		attemptedReport = true
-		var result []panel.OnlineUser
-		var nocountUID = make(map[int]struct{})
+		result := make([]panel.OnlineUser, 0, len(*onlineDevice))
+		nocountUID := make(map[int]struct{}, len(userTraffic))
 		for _, traffic := range userTraffic {
 			total := traffic.Upload + traffic.Download
 			if total < int64(devicemin*1000) {
@@ -57,7 +56,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 				result = append(result, online)
 			}
 		}
-		data := make(map[int][]string)
+		data := make(map[int][]string, len(result))
 		for _, onlineuser := range result {
 			// json structure: { UID1:["ip1","ip2"],UID2:["ip3","ip4"] }
 			data[onlineuser.UID] = append(data[onlineuser.UID], onlineuser.IP)
@@ -102,23 +101,28 @@ func (c *Controller) reportFailureGraceDuration() time.Duration {
 }
 
 func compareUserList(old, new []panel.UserInfo) (deleted, added []panel.UserInfo) {
-	oldMap := make(map[string]int)
-	for i, user := range old {
-		key := user.Uuid + "-" + strconv.Itoa(user.SpeedLimit) + "-" + strconv.Itoa(user.DeviceLimit)
-		oldMap[key] = i
+	oldMap := make(map[string]panel.UserInfo, len(old))
+	for _, user := range old {
+		oldMap[user.Uuid] = user
 	}
 
 	for _, user := range new {
-		key := user.Uuid + "-" + strconv.Itoa(user.SpeedLimit) + "-" + strconv.Itoa(user.DeviceLimit)
-		if _, exists := oldMap[key]; !exists {
+		oldUser, exists := oldMap[user.Uuid]
+		if !exists {
 			added = append(added, user)
-		} else {
-			delete(oldMap, key)
+			continue
 		}
+		if oldUser.SpeedLimit != user.SpeedLimit || oldUser.DeviceLimit != user.DeviceLimit {
+			// Keep old user in oldMap so it is treated as deleted.
+			added = append(added, user)
+			continue
+		}
+		delete(oldMap, user.Uuid)
 	}
 
-	for _, index := range oldMap {
-		deleted = append(deleted, old[index])
+	deleted = make([]panel.UserInfo, 0, len(oldMap))
+	for _, user := range oldMap {
+		deleted = append(deleted, user)
 	}
 
 	return deleted, added

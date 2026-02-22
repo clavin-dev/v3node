@@ -134,6 +134,7 @@ func (l *Limiter) UpdateDynamicSpeedLimit(tag, uuid string, limit int, expire ti
 func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool) (Bucket *ratelimit.Bucket, Reject bool) {
 	// check if ipv4 mapped ipv6
 	ip = strings.TrimPrefix(ip, "::ffff:")
+	nowUnix := time.Now().Unix()
 
 	// check and gen speed limit Bucket
 	nodeLimit := l.SpeedLimit
@@ -144,7 +145,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		u := v.(*UserLimitInfo)
 		deviceLimit = u.DeviceLimit
 		uid = u.UID
-		if u.ExpireTime < time.Now().Unix() && u.ExpireTime != 0 {
+		if u.ExpireTime < nowUnix && u.ExpireTime != 0 {
 			if u.SpeedLimit != 0 {
 				userLimit = u.SpeedLimit
 				u.DynamicSpeedLimit = 0
@@ -165,7 +166,7 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 		l.aliveLock.RLock()
 		aliveIp := l.AliveList[uid]
 		l.aliveLock.RUnlock()
-		enforceAliveDeviceLimit := !l.InReportFailureGrace()
+		enforceAliveDeviceLimit := nowUnix > l.reportFailureUntil.Load()
 		// If any device is online
 		if v, loaded := l.UserOnlineIP.LoadOrStore(taguuid, newipMap); loaded {
 			oldipMap := v.(*sync.Map)
@@ -198,13 +199,14 @@ func (l *Limiter) CheckLimit(taguuid string, ip string, isTcp bool, noSSUDP bool
 
 	limit := int64(determineSpeedLimit(nodeLimit, userLimit)) * 1000000 / 8 // If you need the Speed limit
 	if limit > 0 {
-		Bucket = ratelimit.NewBucketWithQuantum(time.Second, limit, limit) // Byte/s
-		if v, ok := l.SpeedLimiter.LoadOrStore(taguuid, Bucket); ok {
+		if v, ok := l.SpeedLimiter.Load(taguuid); ok {
 			return v.(*ratelimit.Bucket), false
-		} else {
-			l.SpeedLimiter.Store(taguuid, Bucket)
-			return Bucket, false
 		}
+		Bucket = ratelimit.NewBucketWithQuantum(time.Second, limit, limit) // Byte/s
+		if v, loaded := l.SpeedLimiter.LoadOrStore(taguuid, Bucket); loaded {
+			return v.(*ratelimit.Bucket), false
+		}
+		return Bucket, false
 	} else {
 		return nil, false
 	}
