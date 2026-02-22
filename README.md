@@ -12,11 +12,11 @@ A v2board backend base on moddified xray-core.
 wget -N https://raw.githubusercontent.com/clavin-dev/v3node/main/script/install.sh && bash install.sh
 ```
 
-安装后主命令为 `v3node`，同时兼容 `v2node`（软链接）。
+安装后主命令为 `v3node`。
 
 ## 构建
 ``` bash
-GOEXPERIMENT=jsonv2 go build -v -o build_assets/v2node -trimpath -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=$version' -s -w -buildid="
+GOEXPERIMENT=jsonv2 go build -v -o build_assets/v3node -trimpath -ldflags "-X 'github.com/clavin-dev/v3node/cmd.version=$version' -s -w -buildid="
 ```
 
 ## Stars 增长记录

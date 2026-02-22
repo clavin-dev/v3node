@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
-	panel "github.com/wyx2685/v2node/api/v2board"
-	"github.com/wyx2685/v2node/common/task"
-	"github.com/wyx2685/v2node/conf"
-	"github.com/wyx2685/v2node/core"
-	"github.com/wyx2685/v2node/limiter"
+	panel "github.com/clavin-dev/v3node/api/v2board"
+	"github.com/clavin-dev/v3node/common/task"
+	"github.com/clavin-dev/v3node/conf"
+	"github.com/clavin-dev/v3node/core"
+	"github.com/clavin-dev/v3node/limiter"
 )
 
 type Controller struct {

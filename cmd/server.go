@@ -11,10 +11,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/wyx2685/v2node/conf"
-	"github.com/wyx2685/v2node/core"
-	"github.com/wyx2685/v2node/limiter"
-	"github.com/wyx2685/v2node/node"
+	"github.com/clavin-dev/v3node/conf"
+	"github.com/clavin-dev/v3node/core"
+	"github.com/clavin-dev/v3node/limiter"
+	"github.com/clavin-dev/v3node/node"
 )
 
 var (
@@ -24,7 +24,7 @@ var (
 
 var serverCommand = cobra.Command{
 	Use:   "server",
-	Short: "Run v2node server",
+	Short: "Run v3node server",
 	Run:   serverHandle,
 	Args:  cobra.NoArgs,
 }
@@ -32,7 +32,7 @@ var serverCommand = cobra.Command{
 func init() {
 	serverCommand.PersistentFlags().
 		StringVarP(&config, "config", "c",
-			"/etc/v2node/config.json", "config file path")
+			"/etc/v3node/config.json", "config file path")
 	serverCommand.PersistentFlags().
 		BoolVarP(&watch, "watch", "w",
 			true, "watch file path change")

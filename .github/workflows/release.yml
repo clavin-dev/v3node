@@ -128,22 +128,22 @@ jobs:
         if: ${{ github.event_name != 'release' && !startsWith(github.ref, 'refs/tags/') }}
         run: |
           echo "version=${{ github.sha }}" >> $GITHUB_ENV
-      - name: Build v2node
+      - name: Build v3node
         run: |
           echo "version: $version"
           mkdir -p build_assets
-          GOEXPERIMENT=jsonv2 go build -v -o build_assets/v2node -trimpath -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=$version' -s -w -buildid="
+          GOEXPERIMENT=jsonv2 go build -v -o build_assets/v3node -trimpath -ldflags "-X 'github.com/clavin-dev/v3node/cmd.version=$version' -s -w -buildid="
 
-      - name: Build Mips softfloat v2node
+      - name: Build Mips softfloat v3node
         if: matrix.goarch == 'mips' || matrix.goarch == 'mipsle'
         run: |
           echo "version: $version"
-          GOEXPERIMENT=jsonv2 GOMIPS=softfloat go build -v -o build_assets/v2node_softfloat -trimpath -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=$version' -s -w -buildid="
-      - name: Rename Windows v2node
+          GOEXPERIMENT=jsonv2 GOMIPS=softfloat go build -v -o build_assets/v3node_softfloat -trimpath -ldflags "-X 'github.com/clavin-dev/v3node/cmd.version=$version' -s -w -buildid="
+      - name: Rename Windows v3node
         if: matrix.goos == 'windows'
         run: |
           cd ./build_assets || exit 1
-          mv v2node v2node.exe
+          mv v3node v3node.exe
       - name: Prepare to release
         run: |
           cp ${GITHUB_WORKSPACE}/README.md ./build_assets/README.md
@@ -161,9 +161,9 @@ jobs:
         run: |
           pushd build_assets || exit 1
           touch -mt $(date +%Y01010000) *
-          zip -9vr ../v2node-$ASSET_NAME.zip .
+          zip -9vr ../v3node-$ASSET_NAME.zip .
           popd || exit 1
-          FILE=./v2node-$ASSET_NAME.zip
+          FILE=./v3node-$ASSET_NAME.zip
           DGST=$FILE.dgst
           for METHOD in {"md5","sha1","sha256","sha512"}
           do
@@ -171,18 +171,18 @@ jobs:
           done
       - name: Change the name
         run: |
-          mv build_assets v2node-$ASSET_NAME
+          mv build_assets v3node-$ASSET_NAME
       - name: Upload files to Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: v2node-${{ steps.get_filename.outputs.ASSET_NAME }}
+          name: v3node-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |
-            ./v2node-${{ steps.get_filename.outputs.ASSET_NAME }}/*
+            ./v3node-${{ steps.get_filename.outputs.ASSET_NAME }}/*
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./v2node-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
+          file: ./v3node-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
           tag: ${{ github.ref }}
           file_glob: true

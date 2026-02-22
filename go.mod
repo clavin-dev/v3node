@@ -1,4 +1,4 @@
-module github.com/wyx2685/v2node
+module github.com/clavin-dev/v3node
 
 go 1.25.6
 

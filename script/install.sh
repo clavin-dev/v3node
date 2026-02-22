@@ -13,7 +13,6 @@ GITHUB_API_BASE="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}"
 GITHUB_RELEASE_BASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
 MANAGER_CMD="${MANAGER_CMD:-v3node}"
-LEGACY_MANAGER_CMD="${LEGACY_MANAGER_CMD:-v2node}"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
@@ -206,18 +205,18 @@ install_base() {
 
 # 0: running, 1: not running, 2: not installed
 check_status() {
-    if [[ ! -f /usr/local/v2node/v2node ]]; then
+    if [[ ! -f /usr/local/v3node/v3node ]]; then
         return 2
     fi
     if [[ x"${release}" == x"alpine" ]]; then
-        temp=$(service v2node status | awk '{print $3}')
+        temp=$(service v3node status | awk '{print $3}')
         if [[ x"${temp}" == x"started" ]]; then
             return 0
         else
             return 1
         fi
     else
-        temp=$(systemctl status v2node | grep Active | awk '{print $3}' | cut -d "(" -f2 | cut -d ")" -f1)
+        temp=$(systemctl status v3node | grep Active | awk '{print $3}' | cut -d "(" -f2 | cut -d ")" -f1)
         if [[ x"${temp}" == x"running" ]]; then
             return 0
         else
@@ -226,13 +225,13 @@ check_status() {
     fi
 }
 
-generate_v2node_config() {
+generate_v3node_config() {
         local api_host="$1"
         local node_id="$2"
         local api_key="$3"
 
-        mkdir -p /etc/v2node >/dev/null 2>&1
-        cat > /etc/v2node/config.json <<EOF
+        mkdir -p /etc/v3node >/dev/null 2>&1
+        cat > /etc/v3node/config.json <<EOF
 {
     "Log": {
         "Level": "warning",
@@ -249,87 +248,112 @@ generate_v2node_config() {
     ]
 }
 EOF
-        echo -e "${green}V2node 配置文件生成完成,正在重新启动服务${plain}"
+        echo -e "${green}V3node 配置文件生成完成,正在重新启动服务${plain}"
         if [[ x"${release}" == x"alpine" ]]; then
-            service v2node restart
+            service v3node restart
         else
-            systemctl restart v2node
+            systemctl restart v3node
         fi
         sleep 2
         check_status
         echo -e ""
         if [[ $? == 0 ]]; then
-            echo -e "${green}v2node 重启成功${plain}"
+            echo -e "${green}v3node 重启成功${plain}"
         else
-            echo -e "${red}v2node 可能启动失败，请使用 v2node log 查看日志信息${plain}"
+            echo -e "${red}v3node 可能启动失败，请使用 v3node log 查看日志信息${plain}"
         fi
 }
 
-install_v2node() {
+install_v3node() {
     local version_param="$1"
+
+    # 从旧服务名迁移，避免同机存在两个服务实例
+    if [[ x"${release}" == x"alpine" ]]; then
+        if [[ -f /etc/init.d/v2node ]]; then
+            service v2node stop >/dev/null 2>&1 || true
+            rc-update del v2node >/dev/null 2>&1 || true
+            rm -f /etc/init.d/v2node
+        fi
+    else
+        if systemctl list-unit-files 2>/dev/null | grep -q '^v2node\.service'; then
+            systemctl stop v2node >/dev/null 2>&1 || true
+            systemctl disable v2node >/dev/null 2>&1 || true
+            rm -f /etc/systemd/system/v2node.service
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+    fi
+
+    if [[ -e /usr/local/v3node/ ]]; then
+        rm -rf /usr/local/v3node/
+    fi
     if [[ -e /usr/local/v2node/ ]]; then
         rm -rf /usr/local/v2node/
     fi
 
-    mkdir /usr/local/v2node/ -p
-    cd /usr/local/v2node/
+    mkdir /usr/local/v3node/ -p
+    cd /usr/local/v3node/
 
     if  [[ -z "$version_param" ]] ; then
         last_version=$(curl -Ls "${GITHUB_API_BASE}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}检测 v2node 版本失败，可能是超出 Github API 限制，请稍后再试，或手动指定 v2node 版本安装${plain}"
+            echo -e "${red}检测 v3node 版本失败，可能是超出 Github API 限制，请稍后再试，或手动指定 v3node 版本安装${plain}"
             exit 1
         fi
         echo -e "${green}检测到最新版本：${last_version}，开始安装...${plain}"
-        url="${GITHUB_RELEASE_BASE}/${last_version}/v2node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip
+        url="${GITHUB_RELEASE_BASE}/${last_version}/v3node-linux-${arch}.zip"
+        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v3node/v3node-linux.zip
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 v2node 失败，请确保你的服务器能够下载 Github 的文件${plain}"
+            echo -e "${red}下载 v3node 失败，请确保你的服务器能够下载 Github 的文件${plain}"
             exit 1
         fi
     else
     last_version=$version_param
-        url="${GITHUB_RELEASE_BASE}/${last_version}/v2node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip
+        url="${GITHUB_RELEASE_BASE}/${last_version}/v3node-linux-${arch}.zip"
+        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v3node/v3node-linux.zip
         if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 v2node $1 失败，请确保此版本存在${plain}"
+            echo -e "${red}下载 v3node $1 失败，请确保此版本存在${plain}"
             exit 1
         fi
     fi
 
-    unzip v2node-linux.zip
-    rm v2node-linux.zip -f
-    chmod +x v2node
-    mkdir /etc/v2node/ -p
-    cp geoip.dat /etc/v2node/
-    cp geosite.dat /etc/v2node/
+    unzip v3node-linux.zip
+    rm v3node-linux.zip -f
+    chmod +x v3node
+    mkdir /etc/v3node/ -p
+    cp geoip.dat /etc/v3node/
+    cp geosite.dat /etc/v3node/
+
+    # 迁移旧配置目录
+    if [[ -f /etc/v2node/config.json && ! -f /etc/v3node/config.json ]]; then
+        cp /etc/v2node/config.json /etc/v3node/config.json
+    fi
     if [[ x"${release}" == x"alpine" ]]; then
-        rm /etc/init.d/v2node -f
-        cat <<EOF > /etc/init.d/v2node
+        rm /etc/init.d/v3node -f
+        cat <<EOF > /etc/init.d/v3node
 #!/sbin/openrc-run
 
-name="v2node"
-description="v2node"
+name="v3node"
+description="v3node"
 
-command="/usr/local/v2node/v2node"
+command="/usr/local/v3node/v3node"
 command_args="server"
 command_user="root"
 
-pidfile="/run/v2node.pid"
+pidfile="/run/v3node.pid"
 command_background="yes"
 
 depend() {
         need net
 }
 EOF
-        chmod +x /etc/init.d/v2node
-        rc-update add v2node default
-        echo -e "${green}v2node ${last_version}${plain} 安装完成，已设置开机自启"
+        chmod +x /etc/init.d/v3node
+        rc-update add v3node default
+        echo -e "${green}v3node ${last_version}${plain} 安装完成，已设置开机自启"
     else
-        rm /etc/systemd/system/v2node.service -f
-        cat <<EOF > /etc/systemd/system/v2node.service
+        rm /etc/systemd/system/v3node.service -f
+        cat <<EOF > /etc/systemd/system/v3node.service
 [Unit]
-Description=v2node Service
+Description=v3node Service
 After=network.target nss-lookup.target
 Wants=network.target
 
@@ -341,8 +365,8 @@ LimitAS=infinity
 LimitRSS=infinity
 LimitCORE=infinity
 LimitNOFILE=999999
-WorkingDirectory=/usr/local/v2node/
-ExecStart=/usr/local/v2node/v2node server
+WorkingDirectory=/usr/local/v3node/
+ExecStart=/usr/local/v3node/v3node server
 Restart=always
 RestartSec=10
 
@@ -350,44 +374,43 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
         systemctl daemon-reload
-        systemctl stop v2node
-        systemctl enable v2node
-        echo -e "${green}v2node ${last_version}${plain} 安装完成，已设置开机自启"
+        systemctl stop v3node
+        systemctl enable v3node
+        echo -e "${green}v3node ${last_version}${plain} 安装完成，已设置开机自启"
     fi
 
-    if [[ ! -f /etc/v2node/config.json ]]; then
+    if [[ ! -f /etc/v3node/config.json ]]; then
         # 如果通过 CLI 传入了完整参数，则直接生成配置并跳过交互
         if [[ -n "$API_HOST_ARG" && -n "$NODE_ID_ARG" && -n "$API_KEY_ARG" ]]; then
-            generate_v2node_config "$API_HOST_ARG" "$NODE_ID_ARG" "$API_KEY_ARG"
-            echo -e "${green}已根据参数生成 /etc/v2node/config.json${plain}"
+            generate_v3node_config "$API_HOST_ARG" "$NODE_ID_ARG" "$API_KEY_ARG"
+            echo -e "${green}已根据参数生成 /etc/v3node/config.json${plain}"
             first_install=false
         else
             if [[ -f config.json ]]; then
-                cp config.json /etc/v2node/
+                cp config.json /etc/v3node/
             fi
             first_install=true
         fi
     else
         if [[ x"${release}" == x"alpine" ]]; then
-            service v2node start
+            service v3node start
         else
-            systemctl start v2node
+            systemctl start v3node
         fi
         sleep 2
         check_status
         echo -e ""
         if [[ $? == 0 ]]; then
-            echo -e "${green}v2node 重启成功${plain}"
+            echo -e "${green}v3node 重启成功${plain}"
         else
-            echo -e "${red}v2node 可能启动失败，请使用 v2node log 查看日志信息${plain}"
+            echo -e "${red}v3node 可能启动失败，请使用 v3node log 查看日志信息${plain}"
         fi
         first_install=false
     fi
 
 
-    curl -o "/usr/bin/${MANAGER_CMD}" -Ls "${GITHUB_RAW_BASE}/script/v2node.sh"
+    curl -o "/usr/bin/${MANAGER_CMD}" -Ls "${GITHUB_RAW_BASE}/script/v3node.sh"
     chmod +x "/usr/bin/${MANAGER_CMD}"
-    ln -sf "/usr/bin/${MANAGER_CMD}" "/usr/bin/${LEGACY_MANAGER_CMD}"
 
     cd $cur_dir
     rm -f install.sh
@@ -395,25 +418,24 @@ EOF
     echo -e "管理脚本使用方法(主命令: ${MANAGER_CMD}): "
     echo "------------------------------------------"
     echo "${MANAGER_CMD}              - 显示管理菜单 (功能更多)"
-    echo "${MANAGER_CMD} start        - 启动 v2node"
-    echo "${MANAGER_CMD} stop         - 停止 v2node"
-    echo "${MANAGER_CMD} restart      - 重启 v2node"
-    echo "${MANAGER_CMD} status       - 查看 v2node 状态"
-    echo "${MANAGER_CMD} enable       - 设置 v2node 开机自启"
-    echo "${MANAGER_CMD} disable      - 取消 v2node 开机自启"
-    echo "${MANAGER_CMD} log          - 查看 v2node 日志"
-    echo "${MANAGER_CMD} generate     - 生成 v2node 配置文件"
-    echo "${MANAGER_CMD} update       - 更新 v2node"
-    echo "${MANAGER_CMD} update x.x.x - 更新 v2node 指定版本"
-    echo "${MANAGER_CMD} install      - 安装 v2node"
-    echo "${MANAGER_CMD} uninstall    - 卸载 v2node"
-    echo "${MANAGER_CMD} version      - 查看 v2node 版本"
-    echo "兼容命令: ${LEGACY_MANAGER_CMD} -> ${MANAGER_CMD}"
+    echo "${MANAGER_CMD} start        - 启动 v3node"
+    echo "${MANAGER_CMD} stop         - 停止 v3node"
+    echo "${MANAGER_CMD} restart      - 重启 v3node"
+    echo "${MANAGER_CMD} status       - 查看 v3node 状态"
+    echo "${MANAGER_CMD} enable       - 设置 v3node 开机自启"
+    echo "${MANAGER_CMD} disable      - 取消 v3node 开机自启"
+    echo "${MANAGER_CMD} log          - 查看 v3node 日志"
+    echo "${MANAGER_CMD} generate     - 生成 v3node 配置文件"
+    echo "${MANAGER_CMD} update       - 更新 v3node"
+    echo "${MANAGER_CMD} update x.x.x - 更新 v3node 指定版本"
+    echo "${MANAGER_CMD} install      - 安装 v3node"
+    echo "${MANAGER_CMD} uninstall    - 卸载 v3node"
+    echo "${MANAGER_CMD} version      - 查看 v3node 版本"
     echo "------------------------------------------"
     curl -fsS --max-time 10 "https://api.v-50.me/counter" || true
 
     if [[ $first_install == true ]]; then
-        read -rp "检测到你为第一次安装 v2node，是否自动生成 /etc/v2node/config.json？(y/n): " if_generate
+        read -rp "检测到你为第一次安装 v3node，是否自动生成 /etc/v3node/config.json？(y/n): " if_generate
         if [[ "$if_generate" =~ ^[Yy]$ ]]; then
             # 交互式收集参数，提供示例默认值
             read -rp "面板API地址[格式: https://example.com/]: " api_host
@@ -423,7 +445,7 @@ EOF
             read -rp "节点通讯密钥: " api_key
 
             # 生成配置文件（覆盖可能从包中复制的模板）
-            generate_v2node_config "$api_host" "$node_id" "$api_key"
+            generate_v3node_config "$api_host" "$node_id" "$api_key"
         else
             echo "${green}已跳过自动生成配置。如需后续生成，可执行: ${MANAGER_CMD} generate${plain}"
         fi
@@ -433,4 +455,4 @@ EOF
 parse_args "$@"
 echo -e "${green}开始安装${plain}"
 install_base
-install_v2node "$VERSION_ARG"
+install_v3node "$VERSION_ARG"

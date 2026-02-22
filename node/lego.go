@@ -22,8 +22,8 @@ import (
 
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/lego"
-	panel "github.com/wyx2685/v2node/api/v2board"
-	"github.com/wyx2685/v2node/common/file"
+	panel "github.com/clavin-dev/v3node/api/v2board"
+	"github.com/clavin-dev/v3node/common/file"
 )
 
 type Lego struct {

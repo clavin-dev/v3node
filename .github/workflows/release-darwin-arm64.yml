@@ -31,19 +31,19 @@ jobs:
         run: |
           mkdir -p build_assets
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 \
-            go build -v -o build_assets/v2node \
+            go build -v -o build_assets/v3node \
             -trimpath \
-            -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=${VERSION}' -s -w -buildid="
+            -ldflags "-X 'github.com/clavin-dev/v3node/cmd.version=${VERSION}' -s -w -buildid="
 
       - name: Package artifact
         run: |
           cp README.md build_assets/README.md
           cp LICENSE build_assets/LICENSE
           cd build_assets
-          zip -9 "v2node-darwin-arm64-${VERSION}.zip" v2node README.md LICENSE
+          zip -9 "v3node-darwin-arm64-${VERSION}.zip" v3node README.md LICENSE
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: build_assets/v2node-darwin-arm64-${{ env.VERSION }}.zip
+          files: build_assets/v3node-darwin-arm64-${{ env.VERSION }}.zip

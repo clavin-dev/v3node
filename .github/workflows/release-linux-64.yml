@@ -28,9 +28,9 @@ jobs:
         run: |
           mkdir -p build_assets
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 \
-            go build -v -o build_assets/v2node \
+            go build -v -o build_assets/v3node \
             -trimpath \
-            -ldflags "-X 'github.com/wyx2685/v2node/cmd.version=${GITHUB_REF_NAME}' -s -w -buildid="
+            -ldflags "-X 'github.com/clavin-dev/v3node/cmd.version=${GITHUB_REF_NAME}' -s -w -buildid="
 
       - name: Download geo data
         run: |
@@ -42,11 +42,11 @@ jobs:
           cp README.md build_assets/README.md
           cp LICENSE build_assets/LICENSE
           cd build_assets
-          zip -9 "v2node-linux-64.zip" v2node README.md LICENSE geoip.dat geosite.dat
+          zip -9 "v3node-linux-64.zip" v3node README.md LICENSE geoip.dat geosite.dat
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: build_assets/v2node-linux-64.zip
+          files: build_assets/v3node-linux-64.zip
           overwrite_files: true
