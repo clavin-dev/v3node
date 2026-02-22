@@ -22,6 +22,82 @@ type NetworkSettingsProxyProtocol struct {
 	AcceptProxyProtocol bool `json:"acceptProxyProtocol"`
 }
 
+func resolveInboundNetwork(nodeInfo *panel.NodeInfo) string {
+	if nodeInfo == nil {
+		return ""
+	}
+	network := strings.ToLower(strings.TrimSpace(nodeInfo.Common.Network))
+	// Keep trojan behavior consistent with buildTrojan(): empty network defaults to TCP.
+	if network == "" && strings.EqualFold(nodeInfo.Type, "trojan") {
+		return "tcp"
+	}
+	return network
+}
+
+func isWebSocketNetwork(network string) bool {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "ws", "websocket":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildSniffingConfig(network string) *coreConf.SniffingConfig {
+	cfg := &coreConf.SniffingConfig{
+		Enabled:      true,
+		DestOverride: &coreConf.StringList{"http", "tls"},
+	}
+	// WS uses metadata-only sniffing to avoid extra payload caching per connection.
+	if isWebSocketNetwork(network) {
+		cfg.MetadataOnly = true
+	}
+	return cfg
+}
+
+func optimizeWSInboundSettings(inbound *coreConf.InboundDetourConfig) {
+	if inbound == nil || inbound.StreamSetting == nil || inbound.StreamSetting.WSSettings == nil {
+		return
+	}
+
+	ws := inbound.StreamSetting.WSSettings
+	ws.Host = strings.TrimSpace(ws.Host)
+	ws.Path = strings.TrimSpace(ws.Path)
+	if ws.Path == "" {
+		ws.Path = "/"
+	}
+
+	// Server-side ping heartbeat creates one extra goroutine per WS connection.
+	// Disable it on inbound to lower long-connection memory and CPU overhead.
+	ws.HeartbeatPeriod = 0
+
+	if len(ws.Headers) == 0 {
+		ws.Headers = nil
+		return
+	}
+
+	cleaned := make(map[string]string, len(ws.Headers))
+	for k, v := range ws.Headers {
+		key := strings.TrimSpace(k)
+		value := strings.TrimSpace(v)
+		if key == "" || value == "" {
+			continue
+		}
+		if strings.EqualFold(key, "host") {
+			if ws.Host == "" {
+				ws.Host = value
+			}
+			continue
+		}
+		cleaned[key] = value
+	}
+	if len(cleaned) == 0 {
+		ws.Headers = nil
+		return
+	}
+	ws.Headers = cleaned
+}
+
 func (v *V2Core) removeInbound(tag string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -104,13 +180,6 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 	// Set Listen IP address
 	ipAddress := net.ParseAddress(nodeInfo.Common.ListenIP)
 	in.ListenOn = &coreConf.Address{Address: ipAddress}
-	// Set SniffingConfig
-	sniffingConfig := &coreConf.SniffingConfig{
-		Enabled:      true,
-		DestOverride: &coreConf.StringList{"http", "tls"},
-	}
-	in.SniffingConfig = sniffingConfig
-
 	// Set TLS or Reality settings
 	switch nodeInfo.Security {
 	case panel.Tls:
@@ -165,6 +234,11 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 		}
 	default:
 		break
+	}
+	network := resolveInboundNetwork(nodeInfo)
+	in.SniffingConfig = buildSniffingConfig(network)
+	if isWebSocketNetwork(network) {
+		optimizeWSInboundSettings(in)
 	}
 	in.Tag = tag
 	return in.Build()
