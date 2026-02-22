@@ -43,13 +43,56 @@ func isWebSocketNetwork(network string) bool {
 	}
 }
 
-func buildSniffingConfig(network string) *coreConf.SniffingConfig {
+func isGRPCNetwork(network string) bool {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "grpc":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasDomainOrProtocolRoutes(nodeInfo *panel.NodeInfo) bool {
+	if nodeInfo == nil || nodeInfo.Common == nil || len(nodeInfo.Common.Routes) == 0 {
+		return false
+	}
+	for _, route := range nodeInfo.Common.Routes {
+		action := strings.ToLower(strings.TrimSpace(route.Action))
+		switch action {
+		case "block", "route", "protocol":
+			if len(route.Match) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func buildSniffingConfig(nodeInfo *panel.NodeInfo, network string) *coreConf.SniffingConfig {
+	normalizedType := ""
+	if nodeInfo != nil {
+		normalizedType = strings.ToLower(strings.TrimSpace(nodeInfo.Type))
+	}
+	needsContentSniff := hasDomainOrProtocolRoutes(nodeInfo)
+
+	// Trojan over gRPC already carries clear destination in protocol layer.
+	// Disable sniffing to cut CPU in heavy concurrent scenarios.
+	if normalizedType == "trojan" && isGRPCNetwork(network) && !needsContentSniff {
+		return &coreConf.SniffingConfig{
+			Enabled: false,
+		}
+	}
+
 	cfg := &coreConf.SniffingConfig{
 		Enabled:      true,
 		DestOverride: &coreConf.StringList{"http", "tls"},
 	}
-	// WS uses metadata-only sniffing to avoid extra payload caching per connection.
-	if isWebSocketNetwork(network) {
+	// Domain/protocol route rules rely on content sniffing for best match coverage.
+	if needsContentSniff {
+		return cfg
+	}
+	// WS/gRPC use metadata-only sniffing to avoid extra payload caching and parsing.
+	if isWebSocketNetwork(network) || isGRPCNetwork(network) {
 		cfg.MetadataOnly = true
 	}
 	return cfg
@@ -236,7 +279,7 @@ func buildInbound(nodeInfo *panel.NodeInfo, tag string) (*core.InboundHandlerCon
 		break
 	}
 	network := resolveInboundNetwork(nodeInfo)
-	in.SniffingConfig = buildSniffingConfig(network)
+	in.SniffingConfig = buildSniffingConfig(nodeInfo, network)
 	if isWebSocketNetwork(network) {
 		optimizeWSInboundSettings(in)
 	}
