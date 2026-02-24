@@ -20,10 +20,12 @@ type LogConfig struct {
 }
 
 type NodeConfig struct {
-	APIHost string `mapstructure:"ApiHost"`
-	NodeID  int    `mapstructure:"NodeID"`
-	Key     string `mapstructure:"ApiKey"`
-	Timeout int    `mapstructure:"Timeout"`
+	APIHost                   string `mapstructure:"ApiHost"`
+	NodeID                    int    `mapstructure:"NodeID"`
+	Key                       string `mapstructure:"ApiKey"`
+	Timeout                   int    `mapstructure:"Timeout"`
+	PanelOfflineMode          *bool  `mapstructure:"PanelOfflineMode"`
+	PanelOfflineFailThreshold int    `mapstructure:"PanelOfflineFailThreshold"`
 }
 
 func New() *Conf {

@@ -11,6 +11,9 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 	if c == nil || c.server == nil || c.apiClient == nil || c.limiter == nil || c.info == nil || c.info.Common == nil {
 		return nil
 	}
+	if c.isPanelOffline() {
+		return nil
+	}
 	var reportmin = 0
 	var devicemin = 0
 	var attemptedReport = false
@@ -32,6 +35,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 		err = c.apiClient.ReportUserTraffic(userTraffic)
 		if err != nil {
 			reportFailed = true
+			c.markPanelFailure("report_user_traffic", err)
 			log.WithFields(log.Fields{
 				"tag": c.tag,
 				"err": err,
@@ -66,6 +70,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 		}
 		if err = c.apiClient.ReportNodeOnlineUsers(&data); err != nil {
 			reportFailed = true
+			c.markPanelFailure("report_online_users", err)
 			log.WithFields(log.Fields{
 				"tag": c.tag,
 				"err": err,
@@ -85,6 +90,7 @@ func (c *Controller) reportUserTrafficTask() (err error) {
 			}).Warn("Report failed, temporarily relaxed alive-based device limit")
 		} else {
 			c.limiter.ClearReportFailureGrace()
+			c.markPanelSuccess("report_cycle")
 		}
 	}
 

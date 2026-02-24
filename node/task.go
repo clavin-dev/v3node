@@ -17,6 +17,7 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		Interval:               node.PullInterval,
 		Execute:                c.nodeInfoMonitor,
 		Reload:                 c.reloadTask,
+		DisableReloadOnTimeout: c.panelOfflineMode,
 		TimeoutReloadThreshold: 3,
 	}
 	// fetch user list task
@@ -116,9 +117,25 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		return nil
 	}
 
+	if c.isPanelOffline() {
+		// Offline mode: only probe panel availability and keep data plane untouched.
+		_, err = c.apiClient.GetNodeInfo()
+		if err != nil {
+			c.markPanelFailure("probe_node_info", err)
+			log.WithFields(log.Fields{
+				"tag": c.tag,
+				"err": err,
+			}).Warn("Panel is unreachable, offline mode remains active")
+			return nil
+		}
+		c.markPanelSuccess("probe_node_info")
+		return nil
+	}
+
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
 	if err != nil {
+		c.markPanelFailure("get_node_info", err)
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,
@@ -126,6 +143,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		return nil
 	}
 	if newN != nil {
+		c.markPanelSuccess("node_info_changed")
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 		}).Error("Got new node info, reload")
@@ -147,6 +165,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	// get user info
 	newU, err := c.apiClient.GetUserList()
 	if err != nil {
+		c.markPanelFailure("get_user_list", err)
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,
@@ -156,6 +175,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	// get user alive
 	newA, err := c.apiClient.GetUserAlive()
 	if err != nil {
+		c.markPanelFailure("get_user_alive", err)
 		log.WithFields(log.Fields{
 			"tag": c.tag,
 			"err": err,
@@ -169,6 +189,7 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 	}
 	// nil means 304 (no change), empty slice means panel returned no users
 	if newU == nil {
+		c.markPanelSuccess("user_list_not_modified")
 		log.WithField("tag", c.tag).Debug("User list no change")
 		return nil
 	}
@@ -215,5 +236,6 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		log.WithField("tag", c.tag).
 			Infof("%d user deleted, %d user added", len(deleted), len(added))
 	}
+	c.markPanelSuccess("sync_cycle")
 	return nil
 }

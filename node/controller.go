@@ -28,16 +28,33 @@ type Controller struct {
 	reloadLock              sync.Mutex
 	lastTaskReload          time.Time
 	taskReloadCooldown      time.Duration
+	panelStateLock          sync.RWMutex
+	panelOfflineMode        bool
+	panelFailThreshold      int
+	panelFailCount          int
+	panelOffline            bool
 }
 
 // NewController return a Node controller with default parameters.
 func NewController(api *panel.Client, conf *conf.NodeConfig, info *panel.NodeInfo) *Controller {
+	offlineMode := true
+	failThreshold := 3
+	if conf != nil {
+		if conf.PanelOfflineMode != nil {
+			offlineMode = *conf.PanelOfflineMode
+		}
+		if conf.PanelOfflineFailThreshold > 0 {
+			failThreshold = conf.PanelOfflineFailThreshold
+		}
+	}
 	controller := &Controller{
 		apiClient: api,
 		info:      info,
 		conf:      conf,
 		// Keep local task-reload throttling to avoid timeout storms.
 		taskReloadCooldown: 20 * time.Second,
+		panelOfflineMode:   offlineMode,
+		panelFailThreshold: failThreshold,
 	}
 	return controller
 }
@@ -66,6 +83,12 @@ func (c *Controller) Start(x *core.V2Core) error {
 		return fmt.Errorf("failed to get user alive list: %s", err)
 	}
 	c.tag = node.Tag
+	if c.panelOfflineMode {
+		log.WithFields(log.Fields{
+			"tag":       c.tag,
+			"threshold": c.panelFailThreshold,
+		}).Info("Panel offline mode enabled")
+	}
 
 	// add limiter
 	l := limiter.AddLimiter(c.tag, c.userList, c.aliveMap)

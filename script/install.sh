@@ -244,7 +244,9 @@ generate_v3node_config() {
             "ApiHost": "${api_host}",
             "NodeID": ${node_id},
             "ApiKey": "${api_key}",
-            "Timeout": 15
+            "Timeout": 15,
+            "PanelOfflineMode": true,
+            "PanelOfflineFailThreshold": 3
         }
     ]
 }
