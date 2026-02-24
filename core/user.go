@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -25,6 +26,12 @@ import (
 )
 
 func (v *V2Core) GetUserManager(tag string) (proxy.UserManager, error) {
+	if v == nil {
+		return nil, errors.New("core is nil")
+	}
+	if v.ihm == nil {
+		return nil, errors.New("inbound manager is nil")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	handler, err := v.ihm.GetHandler(ctx, tag)
@@ -35,7 +42,11 @@ func (v *V2Core) GetUserManager(tag string) (proxy.UserManager, error) {
 	if !ok {
 		return nil, fmt.Errorf("handler %s is not implement proxy.GetInbound", tag)
 	}
-	userManager, ok := inboundInstance.GetInbound().(proxy.UserManager)
+	inbound := inboundInstance.GetInbound()
+	if inbound == nil {
+		return nil, fmt.Errorf("inbound %s is nil", tag)
+	}
+	userManager, ok := inbound.(proxy.UserManager)
 	if !ok {
 		return nil, fmt.Errorf("handler %s is not implement proxy.UserManager", tag)
 	}
@@ -43,6 +54,15 @@ func (v *V2Core) GetUserManager(tag string) (proxy.UserManager, error) {
 }
 
 func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo) error {
+	if vc == nil {
+		return errors.New("core is nil")
+	}
+	if len(users) == 0 {
+		return nil
+	}
+	if vc.users == nil {
+		return errors.New("user map is nil")
+	}
 	userManager, err := vc.GetUserManager(tag)
 	if err != nil {
 		return fmt.Errorf("get user manager error: %s", err)
@@ -56,17 +76,21 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 		err = userManager.RemoveUser(ctx, user)
 		cancel()
 		if err != nil {
-			return err
+			if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+				return err
+			}
 		}
 		delete(vc.users.uidMap, user)
-		if v, ok := vc.dispatcher.Counter.Load(tag); ok {
-			tc := v.(*counter.TrafficCounter)
-			tc.Delete(user)
-		}
-		if v, ok := vc.dispatcher.LinkManagers.Load(user); ok {
-			lm := v.(*dispatcher.LinkManager)
-			lm.CloseAll()
-			vc.dispatcher.LinkManagers.Delete(user)
+		if vc.dispatcher != nil {
+			if v, ok := vc.dispatcher.Counter.Load(tag); ok {
+				tc := v.(*counter.TrafficCounter)
+				tc.Delete(user)
+			}
+			if v, ok := vc.dispatcher.LinkManagers.Load(user); ok {
+				lm := v.(*dispatcher.LinkManager)
+				lm.CloseAll()
+				vc.dispatcher.LinkManagers.Delete(user)
+			}
 		}
 	}
 	return nil
@@ -74,6 +98,9 @@ func (vc *V2Core) DelUsers(users []panel.UserInfo, tag string, _ *panel.NodeInfo
 
 func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserTraffic, error) {
 	trafficSlice := make([]panel.UserTraffic, 0)
+	if vc == nil || vc.users == nil || vc.dispatcher == nil {
+		return nil, nil
+	}
 	vc.users.mapLock.RLock()
 	defer vc.users.mapLock.RUnlock()
 	if v, ok := vc.dispatcher.Counter.Load(tag); ok {
@@ -131,6 +158,15 @@ func (vc *V2Core) GetUserTrafficSlice(tag string, mintraffic int) ([]panel.UserT
 }
 
 func (v *V2Core) AddUsers(p *AddUsersParams) (added int, err error) {
+	if v == nil {
+		return 0, errors.New("core is nil")
+	}
+	if p == nil || p.NodeInfo == nil {
+		return 0, errors.New("add users params is nil")
+	}
+	if v.users == nil {
+		return 0, errors.New("user map is nil")
+	}
 	v.users.mapLock.Lock()
 	defer v.users.mapLock.Unlock()
 	for i := range p.Users {

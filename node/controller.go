@@ -2,6 +2,8 @@ package node
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	panel "github.com/clavin-dev/v3node/api/v2board"
 	"github.com/clavin-dev/v3node/common/task"
@@ -23,6 +25,9 @@ type Controller struct {
 	nodeInfoMonitorPeriodic *task.Task
 	userReportPeriodic      *task.Task
 	renewCertPeriodic       *task.Task
+	reloadLock              sync.Mutex
+	lastTaskReload          time.Time
+	taskReloadCooldown      time.Duration
 }
 
 // NewController return a Node controller with default parameters.
@@ -31,6 +36,8 @@ func NewController(api *panel.Client, conf *conf.NodeConfig, info *panel.NodeInf
 		apiClient: api,
 		info:      info,
 		conf:      conf,
+		// Keep local task-reload throttling to avoid timeout storms.
+		taskReloadCooldown: 20 * time.Second,
 	}
 	return controller
 }
@@ -111,6 +118,7 @@ func (c *Controller) Close() error {
 	c.info = nil
 	c.limiter = nil
 	c.apiClient = nil
+	c.server = nil
 
 	return nil
 }

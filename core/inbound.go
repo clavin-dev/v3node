@@ -142,12 +142,27 @@ func optimizeWSInboundSettings(inbound *coreConf.InboundDetourConfig) {
 }
 
 func (v *V2Core) removeInbound(tag string) error {
+	if v == nil {
+		return errors.New("core is nil")
+	}
+	if v.ihm == nil {
+		return errors.New("inbound manager is nil")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return v.ihm.RemoveHandler(ctx, tag)
 }
 
 func (v *V2Core) addInbound(config *core.InboundHandlerConfig) error {
+	if v == nil {
+		return errors.New("core is nil")
+	}
+	if v.Server == nil {
+		return errors.New("core server is nil")
+	}
+	if v.ihm == nil {
+		return errors.New("inbound manager is nil")
+	}
 	rawHandler, err := core.CreateObject(v.Server, config)
 	if err != nil {
 		return err

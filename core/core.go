@@ -65,6 +65,9 @@ func (v *V2Core) Start(infos []*panel.NodeInfo) error {
 }
 
 func (v *V2Core) Close() error {
+	if v == nil {
+		return nil
+	}
 	v.access.Lock()
 	defer v.access.Unlock()
 
@@ -95,10 +98,14 @@ func (v *V2Core) Close() error {
 	v.ihm = nil
 	v.ohm = nil
 	v.dispatcher = nil
+	if v.Server == nil {
+		return nil
+	}
 	err := v.Server.Close()
 	if err != nil {
 		return err
 	}
+	v.Server = nil
 	return nil
 }
 

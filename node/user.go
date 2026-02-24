@@ -8,6 +8,9 @@ import (
 )
 
 func (c *Controller) reportUserTrafficTask() (err error) {
+	if c == nil || c.server == nil || c.apiClient == nil || c.limiter == nil || c.info == nil || c.info.Common == nil {
+		return nil
+	}
 	var reportmin = 0
 	var devicemin = 0
 	var attemptedReport = false

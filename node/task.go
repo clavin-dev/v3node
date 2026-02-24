@@ -1,28 +1,31 @@
 package node
 
 import (
+	"runtime/debug"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	panel "github.com/clavin-dev/v3node/api/v2board"
 	"github.com/clavin-dev/v3node/common/task"
 	vCore "github.com/clavin-dev/v3node/core"
+	log "github.com/sirupsen/logrus"
 )
 
 func (c *Controller) startTasks(node *panel.NodeInfo) {
 	// fetch node info task
 	c.nodeInfoMonitorPeriodic = &task.Task{
-		Name:     "nodeInfoMonitor",
-		Interval: node.PullInterval,
-		Execute:  c.nodeInfoMonitor,
-		Reload:   c.reloadTask,
+		Name:                   "nodeInfoMonitor",
+		Interval:               node.PullInterval,
+		Execute:                c.nodeInfoMonitor,
+		Reload:                 c.reloadTask,
+		TimeoutReloadThreshold: 3,
 	}
 	// fetch user list task
 	c.userReportPeriodic = &task.Task{
-		Name:     "reportUserTrafficTask",
-		Interval: node.PushInterval,
-		Execute:  c.reportUserTrafficTask,
-		Reload:   c.reloadTask,
+		Name:                   "reportUserTrafficTask",
+		Interval:               node.PushInterval,
+		Execute:                c.reportUserTrafficTask,
+		Reload:                 c.reloadTask,
+		DisableReloadOnTimeout: true,
 	}
 	log.WithField("tag", c.tag).Info("Start monitor node status")
 	// delay to start nodeInfoMonitor
@@ -34,10 +37,11 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 		case "none", "", "file", "self":
 		default:
 			c.renewCertPeriodic = &task.Task{
-				Name:     "renewCertTask",
-				Interval: time.Hour * 24,
-				Execute:  c.renewCertTask,
-				Reload:   c.reloadTask,
+				Name:                   "renewCertTask",
+				Interval:               time.Hour * 24,
+				Execute:                c.renewCertTask,
+				Reload:                 c.reloadTask,
+				DisableReloadOnTimeout: true,
 			}
 			log.WithField("tag", c.tag).Info("Start renew cert")
 			// delay to start renewCert
@@ -47,6 +51,32 @@ func (c *Controller) startTasks(node *panel.NodeInfo) {
 }
 
 func (c *Controller) reloadTask() {
+	c.reloadLock.Lock()
+	defer c.reloadLock.Unlock()
+
+	if c.conf == nil {
+		log.WithField("tag", c.tag).Error("Tasks reload skipped: node config is nil")
+		return
+	}
+	if c.server == nil {
+		log.WithField("tag", c.tag).Warn("Tasks reload skipped: server is nil")
+		return
+	}
+
+	now := time.Now()
+	cooldown := c.taskReloadCooldown
+	if cooldown <= 0 {
+		cooldown = 20 * time.Second
+	}
+	if !c.lastTaskReload.IsZero() && now.Sub(c.lastTaskReload) < cooldown {
+		log.WithFields(log.Fields{
+			"tag":      c.tag,
+			"cooldown": cooldown.String(),
+		}).Warn("Tasks reload skipped due to cooldown")
+		return
+	}
+	c.lastTaskReload = now
+
 	newClient, err := panel.New(c.conf)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -56,15 +86,36 @@ func (c *Controller) reloadTask() {
 		return
 	}
 	c.apiClient = newClient
-	c.nodeInfoMonitorPeriodic.Close()
-	c.userReportPeriodic.Close()
+	if c.nodeInfoMonitorPeriodic != nil {
+		c.nodeInfoMonitorPeriodic.Close()
+	}
+	if c.userReportPeriodic != nil {
+		c.userReportPeriodic.Close()
+	}
 	if c.renewCertPeriodic != nil {
 		c.renewCertPeriodic.Close()
+	}
+	if c.info == nil {
+		log.WithField("tag", c.tag).Error("Tasks reload failed: node info is nil")
+		return
 	}
 	c.startTasks(c.info)
 }
 
 func (c *Controller) nodeInfoMonitor() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.WithFields(log.Fields{
+				"tag": c.tag,
+				"err": r,
+			}).Errorf("nodeInfoMonitor panic recovered\n%s", debug.Stack())
+		}
+	}()
+
+	if c.apiClient == nil || c.server == nil || c.limiter == nil {
+		return nil
+	}
+
 	// get node info
 	newN, err := c.apiClient.GetNodeInfo()
 	if err != nil {
@@ -87,6 +138,9 @@ func (c *Controller) nodeInfoMonitor() (err error) {
 		} else {
 			log.WithField("tag", c.tag).Error("Reload channel is nil")
 		}
+		// Apply config change through central reload path; avoid mutating users
+		// against a runtime that is about to be replaced.
+		return nil
 	}
 	log.WithField("tag", c.tag).Debug("Node info no change")
 
