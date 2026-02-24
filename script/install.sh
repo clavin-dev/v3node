@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -264,6 +265,39 @@ EOF
         fi
 }
 
+download_release_zip() {
+    local version="$1"
+    local target="/usr/local/v3node/v3node-linux.zip"
+    local candidates=()
+    local asset url
+
+    candidates+=("v3node-linux-${arch}.zip")
+    case "$arch" in
+        arm64-v8a)
+            candidates+=("v3node-linux-arm64.zip")
+            ;;
+        64)
+            candidates+=("v3node-linux-amd64.zip")
+            ;;
+    esac
+    candidates+=("v3node-linux.zip")
+
+    for asset in "${candidates[@]}"; do
+        url="${GITHUB_RELEASE_BASE}/${version}/${asset}"
+        echo -e "${yellow}尝试下载附件: ${asset}${plain}"
+        if curl -fL "$url" | pv -W -N "下载进度" > "$target"; then
+            if unzip -tqq "$target" >/dev/null 2>&1; then
+                echo -e "${green}下载成功: ${asset}${plain}"
+                return 0
+            fi
+            echo -e "${yellow}附件校验失败: ${asset}${plain}"
+        fi
+        rm -f "$target"
+    done
+
+    return 1
+}
+
 install_v3node() {
     local version_param="$1"
 
@@ -300,24 +334,27 @@ install_v3node() {
             exit 1
         fi
         echo -e "${green}检测到最新版本：${last_version}，开始安装...${plain}"
-        url="${GITHUB_RELEASE_BASE}/${last_version}/v3node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v3node/v3node-linux.zip
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 v3node 失败，请确保你的服务器能够下载 Github 的文件${plain}"
+        if ! download_release_zip "$last_version"; then
+            echo -e "${red}下载 v3node 失败(版本: ${last_version}, 架构: ${arch})，请确认 Release 附件是否包含该架构${plain}"
             exit 1
         fi
     else
-    last_version=$version_param
-        url="${GITHUB_RELEASE_BASE}/${last_version}/v3node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v3node/v3node-linux.zip
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 v3node $1 失败，请确保此版本存在${plain}"
+        last_version=$version_param
+        if ! download_release_zip "$last_version"; then
+            echo -e "${red}下载 v3node ${last_version} 失败(架构: ${arch})，请确保此版本存在且包含对应架构附件${plain}"
             exit 1
         fi
     fi
 
-    unzip v3node-linux.zip
+    if ! unzip -o v3node-linux.zip; then
+        echo -e "${red}解压失败，下载文件可能损坏${plain}"
+        exit 1
+    fi
     rm v3node-linux.zip -f
+    if [[ ! -f v3node || ! -f geoip.dat || ! -f geosite.dat ]]; then
+        echo -e "${red}安装包内容不完整，请检查 Release 附件是否正确${plain}"
+        exit 1
+    fi
     chmod +x v3node
     mkdir /etc/v3node/ -p
     cp geoip.dat /etc/v3node/

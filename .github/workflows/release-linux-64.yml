@@ -1,4 +1,4 @@
-name: Release Linux 64
+name: Release Linux
 
 on:
   push:
@@ -10,6 +10,14 @@ on:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            asset_suffix: 64
+          - goarch: arm64
+            asset_suffix: arm64-v8a
     permissions:
       contents: write
     steps:
@@ -24,10 +32,10 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Build linux amd64 binary
+      - name: Build linux binary
         run: |
           mkdir -p build_assets
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 \
+          GOOS=linux GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 GOEXPERIMENT=jsonv2 \
             go build -v -o build_assets/v3node \
             -trimpath \
             -ldflags "-X 'github.com/clavin-dev/v3node/cmd.version=${GITHUB_REF_NAME}' -s -w -buildid="
@@ -42,11 +50,11 @@ jobs:
           cp README.md build_assets/README.md
           cp LICENSE build_assets/LICENSE
           cd build_assets
-          zip -9 "v3node-linux-64.zip" v3node README.md LICENSE geoip.dat geosite.dat
+          zip -9 "v3node-linux-${{ matrix.asset_suffix }}.zip" v3node README.md LICENSE geoip.dat geosite.dat
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: build_assets/v3node-linux-64.zip
+          files: build_assets/v3node-linux-${{ matrix.asset_suffix }}.zip
           overwrite_files: true
